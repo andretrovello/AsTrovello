@@ -1,6 +1,7 @@
 import argparse
 import gc
 from pathlib import Path
+import os
 from tqdm import tqdm
 from astropy.io import fits
 from AsTrovello_lib import * 
@@ -19,7 +20,18 @@ def main():
 
 # ------------------------------------------------ Image alignment --------------------------------------------------
     if args.mode == 'full' or args.mode == 'alignment_only':
-        pass
+        print('Starting image reprojection and alignment')
+        path_phangs = Path(f'~/Desktop/AsTrovello/Input/PHANGS/phangs_hst/{args.galaxy}/images').expanduser()
+        path_s4g = Path(f'~/Desktop/AsTrovello/Input/S4G/{args.galaxy}').expanduser()
+
+        sci_files_phangs = list(path_phangs.glob('*exp-drc-sci.fits'))
+        sci_files_s4g = list(path_s4g.glob('*.fits'))
+
+        print(sci_files_s4g)
+        phangs_ref_file =  sci_files_phangs[0]
+
+        for file in sci_files_s4g:
+            S4G2PHANGS_reproject(file, phangs_ref_file)
 
 # --------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------ Image convolution --------------------------------------------------

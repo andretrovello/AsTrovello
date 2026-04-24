@@ -1,16 +1,77 @@
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
-import os
 import numpy as np
 import psutil
 import gc
 from tqdm import tqdm  
 from pathlib import Path
+import matplotlib.pyplot as plt
+import os 
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------------- Image alignment -------------------------------------------------------
+
+# Reproject S4G on PHANGS header (returns PHANGS size array)
+def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path = '~/Desktop/AsTrovello/Input/reprojected_files'):
+    hdu_phangs = fits.open(phangs_ref_file_path)[0]
+    hdu_s4g = fits.open(s4g_file_path)[0]
+
+
+    sci_file_s4g = s4g_file_path.name
+    galaxy_name, filter_mode = sci_file_s4g.split('.')[0].lower(), sci_file_s4g.split('.')[-2]
+
+    w_phangs = WCS(hdu_phangs.header)
+    w_s4g = WCS(hdu_s4g.header)
+    
+    w_s4g.wcs.ctype = ["RA---TAN-SIP", "DEC--TAN-SIP"]
+    print('\n')
+    print(100*'#')
+    print('SIP correction added to the header!')
+    print(100*'#')
+
+
+    array, footprint = reproject_interp((hdu_s4g.data, w_s4g), w_phangs, shape_out=hdu_phangs.data.shape)
+
+    s4g_new_header = hdu_s4g.header.copy()
+
+    # Geramos as novas keywords de WCS baseadas no PHANGS
+    wcs_phangs_header = w_phangs.to_header(relax=True)
+
+
+    # Removemos keywords de WCS antigas do S4G para evitar conflitos de coordenadas
+    wcs_keys_to_remove = [
+        'CRPIX1', 'CRPIX2', 'CRVAL1', 'CRVAL2', 'CDELT1', 'CDELT2',
+        'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2', 'CTYPE1', 'CTYPE2',
+        'PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'
+    ]
+    for key in wcs_keys_to_remove:
+        if key in s4g_new_header:
+            del s4g_new_header[key]
+
+    s4g_new_header.update(wcs_phangs_header)
+
+    # Garantimos que o CTYPE final reflita a natureza do dado (TAN-SIP)
+    s4g_new_header['CTYPE1'] = 'RA---TAN-SIP'
+    s4g_new_header['CTYPE2'] = 'DEC--TAN-SIP'
+    s4g_new_header['COMMENT'] = 'Reprojected to PHANGS grid. Flux not conserved per pixel, surface brightness preserved.'
+
+    output_path = os.path.expanduser(output_path)
+    output_directory = os.path.join(output_path, galaxy_name)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory, exist_ok=True)
+        print(f"📁 Diretório criado: {output_directory}")
+
+    output_name = f'{galaxy_name}_s4g_irac{filter_mode}_on_phangs_projection.fits'
+
+    fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
+    print('\n')
+    print(100*'#')
+    print(f'Arquivo fits reprojetado: {output_name}')
+    print(100*'#')
+
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Image convolution ------------------------------------------------------
