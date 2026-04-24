@@ -3,11 +3,14 @@ from astropy.wcs import WCS
 from reproject import reproject_interp
 import numpy as np
 import psutil
+import shutil
 import gc
 from tqdm import tqdm  
 from pathlib import Path
 import matplotlib.pyplot as plt
 import os 
+from scipy.signal import fftconvolve
+from collections import defaultdict
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -226,6 +229,175 @@ def final_clean_psf(input_file, output_file):
     else:
         print('Forneça dados dos surveys PHANGS(HST/WFC3) ou S4G(IRAC1/IRAC2)')
 
+
+def pypher_kernel_creation(todos_fwhm, psf_master_name):
+    if psf_master_name.upper().startswith('F'):
+        psf_master_path = os.path.expanduser(f'~/Desktop/AsTrovello/Input/PHANGS/PSF_LIMPAS/PSFSTD_WFC3UV_{psf_master_name.upper()}.fits')
+    elif psf_master_name.upper().startswith('I'):
+        psf_master_path = os.path.expanduser(f'~/Desktop/AsTrovello/Input/S4G/PSF_LIMPAS/{psf_master_name.upper()}_col129_row129.fits')
+    output_dir = os.path.expanduser('~/Desktop/AsTrovello/Output/PSF_Kernels')
+
+    psf_path_phangs_clean = os.path.expanduser('~/Desktop/AsTrovello/Input/PHANGS/PSF_LIMPAS')
+    psf_path_s4g_clean = os.path.expanduser('~/Desktop/AsTrovello/Input/S4G/PSF_LIMPAS')
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    else:
+        print(f"🗑️  Removing previous directory: {os.path.basename(output_dir)}")
+        shutil.rmtree(output_dir)
+        os.makedirs(output_dir)
+
+    # Lista de comandos para rodar no terminal
+    comandos_pypher = []
+
+    for filtro in todos_fwhm.keys():
+        if (filtro != psf_master_name) and (filtro.startswith('f')):
+            psf_high_res = os.path.join(psf_path_phangs_clean, f"PSFSTD_WFC3UV_{filtro.upper()}.fits")
+
+            kernel_name = os.path.join(output_dir, f"kernel_{filtro}_to_{psf_master_name}.fits")
+            cmd = f"pypher {psf_high_res} {psf_master_path} {kernel_name}"
+            comandos_pypher.append(cmd)
+
+        elif (filtro != psf_master_name) and (filtro.startswith('i')):    
+            psf_high_res = os.path.join(psf_path_s4g_clean, f"{filtro.upper()}_col129_row129.fits")
+
+            kernel_name = os.path.join(output_dir, f"kernel_{filtro}_to_{psf_master_name}.fits")
+            cmd = f"pypher {psf_high_res} {psf_master_path} {kernel_name}"
+            comandos_pypher.append(cmd)
+
+
+    return comandos_pypher
+
+def convolved_dict(path_phangs = Path('~/Desktop/AsTrovello/Input/PHANGS/phangs_hst/ngc1087/images').expanduser(), \
+    path_s4g_reprojected = Path('~/Desktop/AsTrovello/Input/reprojected_files/ngc1087').expanduser(), \
+        path_kernels = Path('~/Desktop/AsTrovello/Output/PSF_Kernels').expanduser()):
+
+    # 2. Listando e filtrando TUDO de uma vez só com .glob()
+    # O '*' é um coringa que significa "qualquer coisa"
+    phangs_files = list(path_phangs.glob('*exp-drc-sci.fits'))
+    s4g_files = list(path_s4g_reprojected.glob('*.fits'))
+    kernel_files = list(path_kernels.glob('*.fits'))
+
+    all_files = phangs_files + s4g_files + kernel_files
+
+    kernel_files_names = sorted([f.name for f in kernel_files])
+    filter_info = [f.split('_')[1] for f in kernel_files_names]
+
+
+    fftconvolve_dict = defaultdict(lambda: {'kernel': {}, 'img': {}}) 
+    for f in filter_info:
+        for file in all_files:
+            file_string = str(file)
+            
+            # 1. Verifica se o filtro 'f' está no nome do arquivo
+            if f in file_string:
+                
+                # 2. Se for um kernel, guarda na gaveta de kernel
+                if 'kernel' in file_string: 
+                    fftconvolve_dict[f]['kernel']['path'] = file
+                    fftconvolve_dict[f]['kernel']['name'] = file.name
+                
+                # 3. Se NÃO for kernel, é uma imagem (seja PHANGS ou S4G)
+                else:
+                    # Como você disse que os filtros não se repetem, 
+                    # o arquivo que cair aqui será o único dono desse filtro.
+                    fftconvolve_dict[f]['img']['path'] = file
+                    fftconvolve_dict[f]['img']['name'] = file.name
+    return fftconvolve_dict
+
+def create_convolvedFITS(original_fits , kernel_fits, output_dir = '~/Desktop/AsTrovello/Input/convolved_fits', GAL_NAME = False):
+    output_dir = Path(output_dir).expanduser()
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    with fits.open(kernel_fits) as hdu_kernel, \
+     fits.open(original_fits) as hdu_img:
+        kernel_data = hdu_kernel[0].data
+        kernel_header = hdu_kernel[0].header
+        img_data = hdu_img[0].data
+        img_header = hdu_img[0].header
+
+
+    kernel_data = np.nan_to_num(kernel_data)
+
+    if np.sum(kernel_data) != 0:
+        kernel_norm = kernel_data / np.sum(kernel_data)
+
+    original_file_name = original_fits.name
+    info = original_file_name.split('_')
+    
+    if 'phangs-hst' in info:
+        convolved_img = fftconvolve(img_data, kernel_norm, mode='same')
+        galaxy_name = info[4].lower()
+        survey = 'phangs'
+        filter_name = info[5].lower()
+    elif 's4g' in original_file_name:
+        img_data_limpa = np.nan_to_num(img_data, nan=0.0)
+        convolved_img = fftconvolve(img_data_limpa, kernel_norm, mode='same')
+        galaxy_name = info[0].lower()
+        survey = 's4g'
+        filter_name = info[2].lower()
+    
+    convolved_fits = fits.PrimaryHDU(data = convolved_img, header = img_header)
+
+    print(100 * '#')
+    print(f'Convoluindo para filtro {filter_name} do survey {survey}:')
+
+    output_path = os.path.join(output_dir, galaxy_name)
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    output_name = f'{galaxy_name}_{survey}_{filter_name}_convolved.fits'
+    output_file = os.path.join(output_path, output_name)
+    convolved_fits.writeto(output_file, overwrite=True)
+
+    print(f'FITS convoluído salvo em: {output_file}')
+    print(100 * '#')
+
+    if GAL_NAME == True:
+        return galaxy_name
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------- FITS unit conversion-----------------------------------------------------
+def convert2Jansky(fits_file):
+    with fits.open(fits_file) as hdu:
+        data = hdu[0].data
+        header = hdu[0].header
+    
+    new_data = data.copy()
+    new_header = header.copy()
+
+    # --- CASO HST (PHANGS) ---
+    if header.get('BUNIT') == 'ELECTRONS/S':
+        # Conversão direta: (e/s) * (Jy*s/e) = Jy
+        new_data = new_data * header['PHOTFNU']
+        new_header['BUNIT'] = 'Jy/pixel'
+        print(f"HST: Convertido usando PHOTFNU")
+
+    # --- CASO SPITZER (S4G) ---
+    elif header.get('BUNIT') == 'MJy/sr': 
+        # 1. Área do pixel em arcsec²
+        pixel_area_arcsec2 = np.abs(header['PXSCAL1'] * header['PXSCAL2'])
+        
+        # 2. Conversão de arcsec² para steradian (sr)
+        # 1 sr = (180/pi * 3600)² arcsec² ≈ 4.25e10 arcsec²
+        # Portanto, 1 arcsec² ≈ 2.350443e-11 sr
+        sr_per_arcsec2 = 2.3504430539e-11
+        
+        pixel_area_sr = pixel_area_arcsec2 * sr_per_arcsec2
+        
+        # 3. Conversão final:
+        # Valor[MJy/sr] * 10^6 [Jy/MJy] * Área[sr/pixel] = Jy/pixel
+        new_data = new_data * 1e6 * pixel_area_sr
+        
+        new_header['BUNIT'] = 'Jy/pixel'
+        new_header['HISTORY'] = f"Converted from MJy/sr to Jy/pix using area {pixel_area_sr:.4e} sr"
+        print(f"S4G: Convertido usando área do pixel ({pixel_area_arcsec2} arcsec2)")
+
+    return new_data, new_header
+    
 #----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------------------- Mask ----------------------------------------------------------
 # Cuts survey intersection areas
