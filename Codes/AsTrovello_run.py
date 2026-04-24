@@ -5,6 +5,7 @@ import os
 from tqdm import tqdm
 from astropy.io import fits
 from AsTrovello_lib import * 
+import pandas as pd
 
 
 def main():
@@ -20,7 +21,7 @@ def main():
 
 # ------------------------------------------------ Image alignment --------------------------------------------------
     if args.mode == 'full' or args.mode == 'alignment_only':
-        print('Starting image reprojection and alignment')
+        print('Starting image reprojection and alignment...')
         path_phangs = Path(f'~/Desktop/AsTrovello/Input/PHANGS/phangs_hst/{args.galaxy}/images').expanduser()
         path_s4g = Path(f'~/Desktop/AsTrovello/Input/S4G/{args.galaxy}').expanduser()
 
@@ -35,9 +36,43 @@ def main():
 
 # --------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------ Image convolution --------------------------------------------------
-    if args.mode == 'full' or args.mode == 'conv_only':
-        pass
 
+    if args.mode == 'full' or args.mode == 'conv_only':
+        print('Initiating convolution process...\n')
+        
+        # Caminhos base
+        path_s4g = '~/Desktop/AsTrovello/Input/S4G/PSF'
+        path_phangs = '~/Desktop/AsTrovello/Input/PHANGS/PSF'
+
+        # Pegamos os dados e a lista de arquivos reais
+        fwhm_s4g, _, files_s4g = calculaFWHM_radial_profile(path_s4g)
+        fwhm_phangs, _, files_phangs = calculaFWHM_radial_profile(path_phangs)
+            
+        todos_fwhm = {**fwhm_s4g, **fwhm_phangs}
+        df_fwhm = pd.DataFrame(list(todos_fwhm.items()), columns=['Filtro', 'FWHM_pixels'])
+        df_fwhm = df_fwhm.sort_values(by='FWHM_pixels').reset_index(drop=True)
+
+        print("\nTabela de Resoluções:\n", df_fwhm)
+
+        psf_master_name = df_fwhm.iloc[-1]['Filtro']
+        print(f"\n⭐ PSF Master recomendada: {psf_master_name}")
+        
+        # Dicionário para facilitar o loop de limpeza
+        survey_data = {
+            'PHANGS': {'path': path_phangs, 'files': files_phangs},
+            'S4G': {'path': path_s4g, 'files': files_s4g}
+        }
+
+        print(f'\nInitiating PSF cleaning...')
+        for s_name, s_info in survey_data.items():
+            print(f'\nCleaning {s_name} PSFs...')
+            input_p = os.path.expanduser(s_info['path'])
+            output_p = os.path.expanduser(s_info['path'] + '_LIMPAS')
+
+            os.makedirs(output_p, exist_ok=True)
+
+            for f_name in s_info['files']:
+                final_clean_psf(os.path.join(input_p, f_name), os.path.join(output_p, f_name))
 
 # --------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------ Hypercube creation -----------------------------------------------------
@@ -45,9 +80,9 @@ def main():
         # CONFIGURAÇÕES
         VALOR_N_SIGMA = args.sigma # Valor sugerido para NGC 1087
         APLICAR_MASCARA = args.apply_mask
-        output_dir = Path("~/Desktop/Capivara_mestrado/Input/").expanduser()
-        loc = Path(f"~/Desktop/Capivara_mestrado/Input/convolved_fits/{args.galaxy}").expanduser()
-        ref_dir = Path(f'~/Desktop/Capivara_mestrado/Input/PHANGS/phangs_hst/{args.galaxy}/images/').expanduser()
+        output_dir = Path("~/Desktop/AsTrovello/Input/").expanduser()
+        loc = Path(f"~/Desktop/AsTrovello/Input/convolved_fits/{args.galaxy}").expanduser()
+        ref_dir = Path(f'~/Desktop/AsTrovello/Input/PHANGS/phangs_hst/{args.galaxy}/images/').expanduser()
         
         file_list = list(loc.glob('*_Jy_per_pixel.fits'))
         ref_file = list(ref_dir.glob('*f275w*sci.fits')) 

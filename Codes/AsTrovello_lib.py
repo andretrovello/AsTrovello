@@ -72,11 +72,159 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path = '~/D
     print(100*'#')
 
 
-
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Image convolution ------------------------------------------------------
 
+def get_fwhm_simple(data):
+    """
+    Calcula uma estimativa do FWHM baseada no desvio padrão (momento) 
+    para PSFs centralizadas.
+    """
+    # Criar um grid de coordenadas
+    y, x = np.indices(data.shape)
+    center_y, center_x = np.array(data.shape) // 2
+    
+    # Calcular a variância espacial ponderada pelo brilho
+    r = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+    variance = np.sum(data * r**2) / np.sum(data)
+    sigma = np.sqrt(variance)
+    
+    # FWHM = 2.355 * sigma (para uma Gaussiana)
+    return 2.355 * sigma
 
+def radial_profile(data, center):
+    y, x = np.indices(data.shape)
+    r = np.sqrt((x - center[0])**2 + (y - center[1])**2)
+    r = r.astype(int)
+    tbin = np.bincount(r.ravel(), data.ravel())
+    nr = np.bincount(r.ravel())
+    return tbin / nr
+
+def calculaFWHM_radial_profile(files_path):
+    FWHM_dict = {}
+    dict_profiles = {}
+    path = Path(files_path).expanduser()
+    file_list = list(path.glob('*.fits'))
+    
+    # Lista para retornar ao main quais arquivos foram realmente validados
+    valid_files = []
+
+    for file in file_list:
+        # IMPORTANTE: file.name para pegar só o nome do arquivo
+        if 'S4G' in str(path):
+            if file.name == 'IRAC1_col129_row129.fits':
+                filter_name = 'irac1'
+            elif file.name == 'IRAC2_col129_row129.fits':
+                filter_name = 'irac2'
+            else:
+                continue
+        elif 'PHANGS' in str(path):
+            parts = file.name.replace('.fits', '').split('_')
+            filter_name = parts[-1].lower() 
+        else:
+            continue
+
+        try:
+            with fits.open(file, ignore_missing_end=True) as hdu:
+                data = None
+                for h in hdu:
+                    if h.data is not None:
+                        data = h.data
+                        break
+                
+                if data is not None:
+                    if data.ndim == 3:
+                        data = data[0]
+                    
+                    fwhm = get_fwhm_simple(data)
+                    prof = radial_profile(data, (data.shape[1]//2, data.shape[0]//2))
+
+                    FWHM_dict[filter_name] = fwhm
+                    dict_profiles[filter_name] = prof
+                    valid_files.append(file.name) # Guardamos o nome do arquivo funcional
+                    print(f"Sucesso ao ler: {filter_name}")
+                    
+        except Exception as e:
+            print(f"Erro ao processar {file.name}: {e}")
+
+    return FWHM_dict, dict_profiles, valid_files
+
+# Clean PSF to be applied on Pypher
+def final_clean_psf(input_file, output_file):
+    if 'WFC3UV' in input_file:
+        # Fator de 4x oversampling sobre a escala nativa de 0.04"/pix
+        pixel_scale_arcsec = 0.0395 / 4.0 
+        # Converter para graus (que é o padrão FITS CDELT)
+        pixel_scale_deg = pixel_scale_arcsec / 3600.0
+
+        with fits.open(input_file, ignore_missing_end=True) as hdu:
+            # 1. Achata o cubo (56, 101, 101) para uma imagem 2D (101, 101)
+            # Usamos a média para ter a PSF representativa do campo todo
+            data_2d = np.mean(hdu[0].data, axis=0)
+
+            # 2. Cria um novo HDU com os dados 2D
+            new_hdu = fits.PrimaryHDU(data_2d)
+            
+            # 3. Injeta as keywords que o PyPHER (e o Astropy) usam para escala
+            new_hdu.header['CTYPE1'] = 'RA---TAN'
+            new_hdu.header['CTYPE2'] = 'DEC--TAN'
+            new_hdu.header['CRVAL1'] = 0.0
+            new_hdu.header['CRVAL2'] = 0.0
+            new_hdu.header['CRPIX1'] = 51.0  # Centro do 101x101
+            new_hdu.header['CRPIX2'] = 51.0
+            new_hdu.header['CDELT1'] = -pixel_scale_deg # RA cresce para a esquerda
+            new_hdu.header['CDELT2'] = pixel_scale_deg
+            
+            # Keyword extra que o PyPHER costuma buscar diretamente
+            new_hdu.header['PIXSCALE'] = pixel_scale_arcsec
+
+            # 4. Salva o arquivo pronto para o combate
+            new_hdu.writeto(output_file, overwrite=True)
+            print(f"✅ Arquivo pronto para o PyPHER: {os.path.basename(output_file)}")
+
+    elif any(x in input_file for x in ['IRAC1', 'IRAC2']):
+        if 'IRAC1' in input_file:
+            # Fator de 5x oversampling sobre a escala nativa de 1.221"/pix
+            pixel_scale_arcsec = 1.221 / 5.0    
+        elif 'IRAC2' in input_file:
+            # Fator de 5x oversampling sobre a escala nativa de 1.213"/pix
+            pixel_scale_arcsec = 1.213 / 5.0  
+
+        # Converter para graus (que é o padrão FITS CDELT)
+        pixel_scale_deg = pixel_scale_arcsec / 3600.0
+
+        with fits.open(input_file) as hdu:
+            data_raw = hdu[0].data
+
+            # --- CORREÇÃO DE PARIDADE ---
+            # Se for 128x128, vamos cortar 1 pixel para virar 127x127 (Ímpar)
+            if data_raw.shape[0] % 2 == 0:
+                data_2d = data_raw[:-1, :-1] # Remove a última linha e coluna
+            else:
+                data_2d = data_raw
+            # ----------------------------
+
+            new_hdu = fits.PrimaryHDU(data_2d)
+            
+            # 3. Injeta as keywords que o PyPHER (e o Astropy) usam para escala
+            new_hdu.header['CTYPE1'] = 'RA---TAN'
+            new_hdu.header['CTYPE2'] = 'DEC--TAN'
+            new_hdu.header['CRVAL1'] = 0.0
+            new_hdu.header['CRVAL2'] = 0.0
+            new_hdu.header['CRPIX1'] = (data_2d.shape[1] // 2) + 1 # Centro do CCD
+            new_hdu.header['CRPIX2'] = (data_2d.shape[0] // 2) + 1
+            new_hdu.header['CDELT1'] = -pixel_scale_deg # RA cresce para a esquerda
+            new_hdu.header['CDELT2'] = pixel_scale_deg
+            
+            # Keyword extra que o PyPHER costuma buscar diretamente
+            new_hdu.header['PIXSCALE'] = pixel_scale_arcsec
+
+            # 4. Salva o arquivo pronto para o combate
+            new_hdu.writeto(output_file, overwrite=True)
+            print(f"✅ Arquivo pronto para o PyPHER: {os.path.basename(output_file)}")
+
+    else:
+        print('Forneça dados dos surveys PHANGS(HST/WFC3) ou S4G(IRAC1/IRAC2)')
 
 #----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------------------- Mask ----------------------------------------------------------
