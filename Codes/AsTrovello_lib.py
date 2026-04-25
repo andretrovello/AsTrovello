@@ -17,7 +17,7 @@ from collections import defaultdict
 # --------------------------------------------- Image alignment -------------------------------------------------------
 
 # Reproject S4G on PHANGS header (returns PHANGS size array)
-def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path = '~/Desktop/AsTrovello/Input/reprojected_files'):
+def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
     hdu_phangs = fits.open(phangs_ref_file_path)[0]
     hdu_s4g = fits.open(s4g_file_path)[0]
 
@@ -106,22 +106,21 @@ def radial_profile(data, center):
 def calculaFWHM_radial_profile(files_path):
     FWHM_dict = {}
     dict_profiles = {}
-    path = Path(files_path).expanduser()
-    file_list = list(path.glob('*.fits'))
+    file_list = list(files_path.glob('*.fits'))
     
     # Lista para retornar ao main quais arquivos foram realmente validados
     valid_files = []
 
     for file in file_list:
         # IMPORTANTE: file.name para pegar só o nome do arquivo
-        if 'S4G' in str(path):
+        if 'S4G' in str(files_path):
             if file.name == 'IRAC1_col129_row129.fits':
                 filter_name = 'irac1'
             elif file.name == 'IRAC2_col129_row129.fits':
                 filter_name = 'irac2'
             else:
                 continue
-        elif 'PHANGS' in str(path):
+        elif 'PHANGS' in str(files_path):
             parts = file.name.replace('.fits', '').split('_')
             filter_name = parts[-1].lower() 
         else:
@@ -145,10 +144,10 @@ def calculaFWHM_radial_profile(files_path):
                     FWHM_dict[filter_name] = fwhm
                     dict_profiles[filter_name] = prof
                     valid_files.append(file.name) # Guardamos o nome do arquivo funcional
-                    print(f"Sucesso ao ler: {filter_name}")
+                    print(f"Succesfully read: {filter_name}")
                     
         except Exception as e:
-            print(f"Erro ao processar {file.name}: {e}")
+            print(f"Processing error {file.name}: {e}")
 
     return FWHM_dict, dict_profiles, valid_files
 
@@ -230,15 +229,11 @@ def final_clean_psf(input_file, output_file):
         print('Forneça dados dos surveys PHANGS(HST/WFC3) ou S4G(IRAC1/IRAC2)')
 
 
-def pypher_kernel_creation(todos_fwhm, psf_master_name):
-    if psf_master_name.upper().startswith('F'):
-        psf_master_path = os.path.expanduser(f'~/Desktop/AsTrovello/Input/PHANGS/PSF_LIMPAS/PSFSTD_WFC3UV_{psf_master_name.upper()}.fits')
-    elif psf_master_name.upper().startswith('I'):
-        psf_master_path = os.path.expanduser(f'~/Desktop/AsTrovello/Input/S4G/PSF_LIMPAS/{psf_master_name.upper()}_col129_row129.fits')
-    output_dir = os.path.expanduser('~/Desktop/AsTrovello/Output/PSF_Kernels')
+def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
 
-    psf_path_phangs_clean = os.path.expanduser('~/Desktop/AsTrovello/Input/PHANGS/PSF_LIMPAS')
-    psf_path_s4g_clean = os.path.expanduser('~/Desktop/AsTrovello/Input/S4G/PSF_LIMPAS')
+    psf_path_phangs_clean = input_dir / 'PHANGS' / 'PSF_LIMPAS'
+    psf_path_s4g_clean = input_dir / 'S4G' / 'PSF_LIMPAS'
+    psf_master_name = psf_master_path.stem.split('_')[0].lower()
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -268,9 +263,7 @@ def pypher_kernel_creation(todos_fwhm, psf_master_name):
 
     return comandos_pypher
 
-def convolved_dict(path_phangs = Path('~/Desktop/AsTrovello/Input/PHANGS/phangs_hst/ngc1087/images').expanduser(), \
-    path_s4g_reprojected = Path('~/Desktop/AsTrovello/Input/reprojected_files/ngc1087').expanduser(), \
-        path_kernels = Path('~/Desktop/AsTrovello/Output/PSF_Kernels').expanduser()):
+def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels):
 
     # 2. Listando e filtrando TUDO de uma vez só com .glob()
     # O '*' é um coringa que significa "qualquer coisa"
@@ -305,7 +298,7 @@ def convolved_dict(path_phangs = Path('~/Desktop/AsTrovello/Input/PHANGS/phangs_
                     fftconvolve_dict[f]['img']['name'] = file.name
     return fftconvolve_dict
 
-def create_convolvedFITS(original_fits , kernel_fits, output_dir = '~/Desktop/AsTrovello/Input/convolved_fits', GAL_NAME = False):
+def create_convolvedFITS(original_fits , kernel_fits, output_dir, GAL_NAME = False):
     output_dir = Path(output_dir).expanduser()
     
     if not os.path.exists(output_dir):
@@ -355,7 +348,7 @@ def create_convolvedFITS(original_fits , kernel_fits, output_dir = '~/Desktop/As
     print(f'FITS convoluído salvo em: {output_file}')
     print(100 * '#')
 
-    if GAL_NAME == True:
+    if GAL_NAME:
         return galaxy_name
 
 
