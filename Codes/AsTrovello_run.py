@@ -118,13 +118,13 @@ def main():
 
             print(f"\n--- Creating {len(comandos_pypher)} kernels via PyPHER ---")
             for c in comandos_pypher:
-                print(f"🚀 Running: {c}")
+                print(f"----- Running: {c} -----")
                 try:
                     # Execute PyPHER in the shell; check=True raises an error if it fails
                     subprocess.run(c, shell=True, check=True)
-                    print("✅ Kernel generated successfully!")
+                    print("==> Kernel generated successfully!")
                 except subprocess.CalledProcessError as e:
-                    print(f"❌ PyPHER error: {e}")
+                    print(f"==> PyPHER error: {e}")
                     continue 
 
             print("\nKernel processing completed!")
@@ -165,7 +165,7 @@ def main():
 # -------------------------------------------------------------------------------------------------------------------------
 # ----------------------------------------------- FITS unit conversion-----------------------------------------------------
     if args.mode == 'full' or args.mode == 'conv_only':
-        print(100 * '#' + '\n ----- Starting unit conversion -----' )
+        print('\n ----- Starting unit conversion -----' )
         convolved_fits_path_gal = convolved_fits_path / args.galaxy
         conv_files = list(convolved_fits_path_gal.glob('*.fits'))
 
@@ -221,7 +221,7 @@ def main():
             _, final_ny, final_nx = cube.shape
             final_name = output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_Jy_per_pixel.fits'
             temp_name.rename(final_name)
-            print(f"✅ Cube created: {final_name.name}")
+            print(f"==> Cube created: {final_name.name}")
 
             # Memory cleanup
             del aligned_images

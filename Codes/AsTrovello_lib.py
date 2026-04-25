@@ -158,7 +158,7 @@ def final_clean_psf(input_file, output_file):
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"✅ File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
 
     elif any(x in input_file for x in ['IRAC1', 'IRAC2']):
         # Spitzer scale: native ~1.22"/pix, oversampled 5x
@@ -179,7 +179,7 @@ def final_clean_psf(input_file, output_file):
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"✅ File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
 
 def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
     """
@@ -191,7 +191,7 @@ def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
     psf_master_name = psf_master_path.stem.split('_')[0].lower()
 
     if os.path.exists(output_dir):
-        print(f"🗑️  Removing previous directory: {os.path.basename(output_dir)}")
+        print(f"==>  Removing previous directory: {os.path.basename(output_dir)}")
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
 
@@ -419,7 +419,7 @@ def create_cutouts(cube, cube_header, regions):
         cut_h['CRPIX1'] -= x_start
         cut_h['CRPIX2'] -= y_start
         fits.writeto(path, cube_cut, header=cut_h, overwrite=True)
-        print(f"🔎 Cutout saved to: {path.name}")
+        print(f"==> Cutout saved to: {path.name}")
 
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Utility Functions -----------------------------------------------------
