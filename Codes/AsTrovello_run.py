@@ -196,16 +196,16 @@ def main():
         file_list = list(loc.glob('*_Jy_per_pixel.fits'))
         ref_file = list(phangs_imgs.glob('*f275w*sci.fits')) 
 
-        print(f"Arquivos encontrados: {len(file_list)}") # Adicione isso
+        print(f"Found files: {len(file_list)}") # Adicione isso
         if not file_list: 
-            print("Erro: A lista de arquivos está vazia! Verifique os caminhos.")
+            print("Error: File list empty! Verify paths.")
             return
 
         fits_files = sorted([(f, f.name.split('_')[2]) for f in file_list])
         ref_header = fits.getheader(fits_files[0][0], ext=0)
 
         aligned_images, filter_names = [], []
-        for file, filt in tqdm(fits_files, desc="Lendo FITS"):
+        for file, filt in tqdm(fits_files, desc="reading FITS file"):
             aligned_images.append(fits.getdata(file, ext=0).astype(np.float32))
             filter_names.append(filt)
 
@@ -220,7 +220,7 @@ def main():
             _, final_ny, final_nx = cube.shape
             final_name = output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_Jy_per_pixel.fits'
             temp_name.rename(final_name)
-            print(f"✅ Cubo finalizado: {final_name.name}")
+            print(f"✅ Cube created: {final_name.name}")
 
             del aligned_images
             gc.collect()

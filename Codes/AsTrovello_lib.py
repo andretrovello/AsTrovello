@@ -367,7 +367,7 @@ def convert2Jansky(fits_file):
         # Conversão direta: (e/s) * (Jy*s/e) = Jy
         new_data = new_data * header['PHOTFNU']
         new_header['BUNIT'] = 'Jy/pixel'
-        print(f"HST: Convertido usando PHOTFNU")
+        print(f"HST: Converted using PHOTFNU")
 
     # --- CASO SPITZER (S4G) ---
     elif header.get('BUNIT') == 'MJy/sr': 
@@ -387,7 +387,7 @@ def convert2Jansky(fits_file):
         
         new_header['BUNIT'] = 'Jy/pixel'
         new_header['HISTORY'] = f"Converted from MJy/sr to Jy/pix using area {pixel_area_sr:.4e} sr"
-        print(f"S4G: Convertido usando área do pixel ({pixel_area_arcsec2} arcsec2)")
+        print(f"S4G: Converted using pixel area ({pixel_area_arcsec2} arcsec2)")
 
     return new_data, new_header
     
@@ -396,9 +396,9 @@ def convert2Jansky(fits_file):
 # Cuts survey intersection areas
 
 def phangs_intersection_mask(ref_file):
-    print('Encontrando zona de intersecção de surveys...')
+    print('Finding intersection area between...')
     if ref_file is None or len(ref_file) == 0:
-        print('CUIDADO: Arquivo de referência não encontrado. Prosseguindo sem máscara de borda...')
+        print('WARINING: Reference file not found. Proceeding without border mask...')
         mask_ref = None    
     else:
         ref_data = fits.getdata(ref_file[0], ext=0)
@@ -410,7 +410,7 @@ def soma_img(aligned_images, ref_file):
     res = None
     intersection_mask = phangs_intersection_mask(ref_file)
 
-    for data_orig in tqdm(aligned_images, desc="Somando para máscara"):
+    for data_orig in tqdm(aligned_images, desc="Integrating for mask"):
         data = data_orig.copy() # Cópia para não alterar o dado original da lista
         if intersection_mask is not None:
             if data.shape == intersection_mask.shape:
@@ -451,7 +451,7 @@ def mask(data, N_SIGMA=3):
 def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_filename, \
      aplicar_mask=True, N_SIGMA=3, padding=50):
     
-    print(f'\nIniciando criação do cubo (N_SIGMA={N_SIGMA})...')
+    print(f'\nInitiating hypercube creation (N_SIGMA={N_SIGMA})...')
     n_filtros = len(filter_names)
     ny, nx = aligned_images[0].shape
     cubo = np.empty((n_filtros, ny, nx), dtype=np.float32)
@@ -461,16 +461,16 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
     
     # 2. Decidir a máscara final de processamento
     if aplicar_mask:
-        print('Gerando máscara de Sigma (N_SIGMA)...')
+        print('Generating sky mask (N_SIGMA)...')
         summed = soma_img(aligned_images, ref_file)
         _, sigma_mask = mask(summed, N_SIGMA=N_SIGMA)
         mask_final = sigma_mask
     else:
-        print('Usando apenas bordas de intersecção.')
+        print('Using only border mask')
         mask_final = inter_mask
 
     # 3. Preenchimento do cubo com NaNs nas regiões inválidas
-    print('Limpando bordas e preenchendo camadas...')
+    print('Cleaning borders and filling layers...')
     for i in range(n_filtros):
         img_atual = aligned_images[i]
         if mask_final is not None:
@@ -492,7 +492,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
 
             cubo = cubo[:, y_min:y_max, x_min:x_max]
             y_off, x_off = y_min, x_min
-            print(f"✂️ Recorte: {ny}x{nx} -> {cubo.shape[1]}x{cubo.shape[2]}")
+            print(f"✂️ Bounding box cutout: {ny}x{nx} -> {cubo.shape[1]}x{cubo.shape[2]}")
 
     # --- CONFIGURAÇÃO DO WCS 3D ---
     wcs_2d = WCS(ref_header, naxis=2)
@@ -522,7 +522,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
 def create_cutouts(cube, cube_header, regions):
     for path, x_start, x_end, y_start, y_end in regions:
         if x_end > cube.shape[2] or y_end > cube.shape[1] or x_start < 0 or y_start < 0:
-            print(f"Aviso: Zoom '{path.name}' fora dos limites. Pulando.")
+            print(f"Warning: Zoom '{path.name}' out of bounds. Continuing.")
             continue
         
         cube_cut = cube[:, y_start:y_end, x_start:x_end]
@@ -530,62 +530,10 @@ def create_cutouts(cube, cube_header, regions):
         cut_header['CRPIX1'] -= x_start
         cut_header['CRPIX2'] -= y_start
         fits.writeto(path, cube_cut, header=cut_header, overwrite=True)
-        print(f"🔎 Zoom salvo: {path.name}")
-
-
-# ----------------------------------------------------------------------------------------------------------------------
-# -------------------------------------------- Main function -----------------------------------------------------------
-
-# Main script to generate data cubes
-def main():
-    # CONFIGURAÇÕES
-    VALOR_N_SIGMA = 1 # Valor sugerido para NGC 1087
-    APLICAR_MASCARA = False
-    output_dir = Path("~/Desktop/Capivara_mestrado/Input/").expanduser()
-    loc = Path("~/Desktop/Capivara_mestrado/Input/convolved_fits/ngc1087").expanduser()
-    ref_dir = Path('~/Desktop/Capivara_mestrado/Input/PHANGS/phangs_hst/ngc1087/images/').expanduser()
-    
-    file_list = list(loc.glob('*_Jy_per_pixel.fits'))
-    ref_file = list(ref_dir.glob('*f275w*sci.fits')) 
-
-    if not file_list: return
-
-    fits_files = sorted([(f, f.name.split('_')[2]) for f in file_list])
-    ref_header = fits.getheader(fits_files[0][0], ext=0)
-
-    aligned_images, filter_names = [], []
-    for file, filt in tqdm(fits_files, desc="Lendo FITS"):
-        aligned_images.append(fits.getdata(file, ext=0).astype(np.float32))
-        filter_names.append(filt)
-
-    if aligned_images:
-        temp_name = output_dir / 'temp_cube.fits'
-        cube, cube_header = create_data_cube(
-            aligned_images, filter_names, ref_file, ref_header, 
-            temp_name, aplicar_mask=APLICAR_MASCARA, N_SIGMA=VALOR_N_SIGMA
-        )
-
-        # RENOMEAÇÃO DINÂMICA (Baseada no objeto em memória)
-        _, final_ny, final_nx = cube.shape
-        final_name = output_dir / f'datacube_sci_{final_nx}x{final_ny}_Jy_per_pixel.fits'
-        temp_name.rename(final_name)
-        print(f"✅ Cubo finalizado: {final_name.name}")
-
-        del aligned_images
-        gc.collect()
-        
-        # ZOOM AUTOMATIZADO (Centralizado no CRPIX)
-        cx, cy = int(cube_header['CRPIX1']), int(cube_header['CRPIX2'])
-        regions = [(output_dir / f'datacube_sci_{final_nx}x{final_ny}_zoomed.fits', 
-                    cx-150, cx+150, cy-150, cy+150)]
-        create_cutouts(cube, cube_header, regions)
-
-
-
+        print(f"🔎 Cutout saved to: {path.name}")
 
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Additional functios -----------------------------------------------------
-
 # Obtains filters in file names
 def get_filters(file_list, start, position):
     return list(set(file.split('_')[position] for file in file_list if file.startswith(start)))
