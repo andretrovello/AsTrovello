@@ -37,11 +37,11 @@ def main():
     input_dir = BASE_DIR / 'Input'
     # 1. PHANGS
     phangs_dir = input_dir / "PHANGS" 
-    phangs_imgs = phangs_dir / "phangs_hst" / args.galaxy.lower()
+    phangs_imgs = phangs_dir / 'galaxies' / "phangs_hst" / args.galaxy.lower()
     phangs_psf_path = phangs_dir / 'PSF'
     # 2. S4G
     s4g_dir = input_dir / "S4G"
-    s4g_imgs = s4g_dir / args.galaxy.lower()
+    s4g_imgs = s4g_dir / 'galaxies' / args.galaxy.lower()
     s4g_psf_path = s4g_dir / 'PSF' 
 
     # Output paths

@@ -284,7 +284,7 @@ def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels):
             
             # 1. Verifica se o filtro 'f' está no nome do arquivo
             if f in file_string:
-                
+    
                 # 2. Se for um kernel, guarda na gaveta de kernel
                 if 'kernel' in file_string: 
                     fftconvolve_dict[f]['kernel']['path'] = file
@@ -396,7 +396,7 @@ def convert2Jansky(fits_file):
 # Cuts survey intersection areas
 
 def phangs_intersection_mask(ref_file):
-    print('Finding intersection area between...')
+    print('Finding intersection area between surveys...')
     if ref_file is None or len(ref_file) == 0:
         print('WARINING: Reference file not found. Proceeding without border mask...')
         mask_ref = None    
@@ -457,7 +457,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
     cubo = np.empty((n_filtros, ny, nx), dtype=np.float32)
     
     # 1. Obter a máscara de intersecção (essencial para o recorte sempre)
-    inter_mask = phangs_intersection_mask(ref_file)
+    # inter_mask = phangs_intersection_mask(ref_file)
     
     # 2. Decidir a máscara final de processamento
     if aplicar_mask:
@@ -467,7 +467,8 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
         mask_final = sigma_mask
     else:
         print('Using only border mask')
-        mask_final = inter_mask
+        mask_final = phangs_intersection_mask(ref_file)
+
 
     # 3. Preenchimento do cubo com NaNs nas regiões inválidas
     print('Cleaning borders and filling layers...')
