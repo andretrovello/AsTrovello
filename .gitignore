@@ -1,13 +1,13 @@
-# Ignorar todos os arquivos FITS (muito pesados)
+# Ignore all fits files
 *.fits
 *.fits.gz
 *.fts
 
-# Ignorar pastas inteiras de dados
+# Ignore folders
 Input/
 Output/
 
-# Ignorar arquivos temporários do Python e do Sistema
+# Ignore temp files
 __pycache__/
 *.py[cod]
 .DS_Store
