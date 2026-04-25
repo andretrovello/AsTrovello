@@ -5,7 +5,7 @@
 
 ## AsTrovello
 
-**AsTrovello** (aka Capivara Pipeline) is a Python-based astronomical data analysis framework designed to process and align multi-wavelength galaxy data. It focuses on integrating high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**.
+**AsTrovello** is a Python-based astronomical data analysis framework designed to process and align multi-wavelength galaxy data. It focuses on integrating high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**.
 
 The pipeline performs image reprojection, PSF (Point Spread Function) homogenization through convolution, unit conversion to Jansky, and final 3D hypercube creation.
 
