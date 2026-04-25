@@ -1,4 +1,8 @@
-# 🚀 AsTrovello
+
+<p align="center">
+  <img src="AsTrovello_logo.png" alt="AsTrovello Logo" width="300">
+</p>
+# AsTrovello
 
 **AsTrovello** (aka Capivara Pipeline) is a Python-based astronomical data analysis framework designed to process and align multi-wavelength galaxy data. It focuses on integrating high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**.
 
@@ -6,7 +10,7 @@ The pipeline performs image reprojection, PSF (Point Spread Function) homogeniza
 
 ---
 
-## 🛠️ Main Features
+## Main Features
 
 * **Image Alignment:** Reprojects S4G images onto the HST pixel grid (conserving surface brightness).
 * **PSF Homogenization:** Calculates FWHM and generates convolution kernels via **PyPHER** to match the resolution of different filters to a common "Master" PSF.
@@ -15,7 +19,7 @@ The pipeline performs image reprojection, PSF (Point Spread Function) homogeniza
 
 ---
 
-## 💻 Installation & Requirements
+## Installation & Requirements
 
 The pipeline runs on **Ubuntu Linux** and is optimized for use within a Conda environment.
 
@@ -35,7 +39,7 @@ The pipeline runs on **Ubuntu Linux** and is optimized for use within a Conda en
 
 ---
 
-## 🚀 How to Run
+## How to Run
 
 The main execution script is `AsTrovello_run.py`, located in the `Codes/` directory.
 
