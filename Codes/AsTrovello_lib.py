@@ -280,7 +280,7 @@ def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels):
     fftconvolve_dict = defaultdict(lambda: {'kernel': {}, 'img': {}}) 
     for f in filter_info:
         for file in all_files:
-            file_string = str(file)
+            file_string = str(file).lower()
             
             # 1. Verifica se o filtro 'f' está no nome do arquivo
             if f in file_string:
