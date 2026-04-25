@@ -64,14 +64,14 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
     output_directory = os.path.join(output_path, galaxy_name)
     if not os.path.exists(output_directory):
         os.makedirs(output_directory, exist_ok=True)
-        print(f"📁 Diretório criado: {output_directory}")
+        print(f"📁 Directory created: {output_directory}")
 
     output_name = f'{galaxy_name}_s4g_irac{filter_mode}_on_phangs_projection.fits'
 
     fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
     print('\n')
     print(100*'#')
-    print(f'Arquivo fits reprojetado: {output_name}')
+    print(f'Reprojected FITS file: {output_name}')
     print(100*'#')
 
 
@@ -182,7 +182,7 @@ def final_clean_psf(input_file, output_file):
 
             # 4. Salva o arquivo pronto para o combate
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"✅ Arquivo pronto para o PyPHER: {os.path.basename(output_file)}")
+            print(f"✅ File ready to be applied in PyPHER: {os.path.basename(output_file)}")
 
     elif any(x in input_file for x in ['IRAC1', 'IRAC2']):
         if 'IRAC1' in input_file:
@@ -223,10 +223,10 @@ def final_clean_psf(input_file, output_file):
 
             # 4. Salva o arquivo pronto para o combate
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"✅ Arquivo pronto para o PyPHER: {os.path.basename(output_file)}")
+            print(f"✅ File ready to be applied in PyPHER: {os.path.basename(output_file)}")
 
     else:
-        print('Forneça dados dos surveys PHANGS(HST/WFC3) ou S4G(IRAC1/IRAC2)')
+        print('Provide data from PHANGS(HST/WFC3) or S4G(IRAC1/IRAC2) surveys')
 
 
 def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
@@ -335,7 +335,7 @@ def create_convolvedFITS(original_fits , kernel_fits, output_dir, GAL_NAME = Fal
     convolved_fits = fits.PrimaryHDU(data = convolved_img, header = img_header)
 
     print(100 * '#')
-    print(f'Convoluindo para filtro {filter_name} do survey {survey}:')
+    print(f'Convolving {filter_name} filter from {survey} survey:')
 
     output_path = os.path.join(output_dir, galaxy_name)
     if not os.path.exists(output_path):
@@ -345,7 +345,7 @@ def create_convolvedFITS(original_fits , kernel_fits, output_dir, GAL_NAME = Fal
     output_file = os.path.join(output_path, output_name)
     convolved_fits.writeto(output_file, overwrite=True)
 
-    print(f'FITS convoluído salvo em: {output_file}')
+    print(f'Convolved FITS saved to: {output_file}')
     print(100 * '#')
 
     if GAL_NAME:

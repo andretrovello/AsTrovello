@@ -6,6 +6,7 @@ from tqdm import tqdm
 from astropy.io import fits
 import pandas as pd
 import subprocess
+import shutil
 from scipy.signal import fftconvolve
 from collections import defaultdict
 from AsTrovello_lib import * 
@@ -52,7 +53,7 @@ def main():
 
 # ------------------------------------------------ Image alignment --------------------------------------------------
     if args.mode == 'full' or args.mode == 'alignment_only':
-        print('Starting image reprojection and alignment...')
+        print('Starting image reprojection and alignment...\n')
 
 
         sci_files_phangs = list(phangs_imgs.glob('*exp-drc-sci.fits'))
@@ -126,11 +127,12 @@ def main():
             print('Matching kernels already exist. Proceeding to image convolution...')
             kernel_files = list(kernel_dir.glob('*.fits'))
             psf_master_name = str(kernel_files[0].stem).split('_')[-1]
-            convolved_fits_path_gal = convolved_fits_path / args.galaxy
+        
+        convolved_fits_path_gal = convolved_fits_path / args.galaxy
 
-            if os.path.exists(convolved_fits_path_gal):
-                print(f'Removing existing convolved directory: {convolved_fits_path_gal}')
-                shutil.rmtree(convolved_fits_path_gal)
+        if os.path.exists(convolved_fits_path_gal):
+            print(f'Removing existing convolved directory: {convolved_fits_path_gal}')
+            shutil.rmtree(convolved_fits_path_gal)
         
 
         fftconvolve_dict = convolved_dict(path_phangs = phangs_imgs, \
@@ -155,8 +157,8 @@ def main():
         shutil.copy2(master_source_path, master_dest_path)
 
         print(100 * '#')
-        print(f'Arquivo master do filtro irac2 do survey s4g:')
-        print(f'FITS salvo em: {master_dest_path}')
+        print(f'Master file {psf_master_name} from s4g survey:')
+        print(f'FITS saved to: {master_dest_path}')
         print(100 * '#')
 
 # -------------------------------------------------------------------------------------------------------------------------
