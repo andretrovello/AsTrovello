@@ -47,7 +47,7 @@ The main execution script is `AsTrovello_run.py`, located in the `Codes/` direct
 ### Basic Syntax
 ```bash
 python Codes/AsTrovello_run.py --galaxy [GALAXY_NAME] --mode [MODE] [FLAGS]
-
+```
 ### Execution Modes
 
 The pipeline can be executed in different stages depending on your needs. Use the `--mode` argument to select one of the following:
@@ -69,12 +69,12 @@ Here are the most common ways to run the **AsTrovello** pipeline:
 Runs everything from alignment to the final hypercube. Ideal for a first-time run on a new galaxy.
 ```bash
 python Codes/AsTrovello_run.py --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
-
+```
 ## 📂 Project Structure
 
 The repository is organized to separate source code, documentation, and data surveys. Below is the standard directory tree:
 
-'''text
+```text
 AsTrovello/
 ├── Codes/
 │   ├── AsTrovello_run.py   # Main execution script (Master)
@@ -84,4 +84,4 @@ AsTrovello/
 │   ├── PHANGS/             # HST images and PSF models
 │   └── S4G/                # Spitzer/IRAC images and PSFs
 └── Output/                 # Processed FITS and Hypercubes
-'''
+```
