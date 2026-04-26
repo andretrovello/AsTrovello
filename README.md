@@ -70,7 +70,7 @@ Runs everything from alignment to the final hypercube. Ideal for a first-time ru
 ```bash
 python Codes/AsTrovello_run.py --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
 ```
-## 📂 Project Structure
+## Project Structure
 
 The repository is organized to separate source code, documentation, and data surveys. Below is the standard directory tree:
 
