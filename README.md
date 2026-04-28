@@ -9,6 +9,10 @@
 
 The pipeline performs image reprojection, PSF (Point Spread Function) homogenization through convolution, unit conversion to Jansky, and final 3D hypercube creation.
 
+The respective data cubes can be found downloaded in:
+**S4G:** https://irsa.ipac.caltech.edu/data/SPITZER/S4G/ --> File: <target>.phot.1.fits and NGC[number].phot.2.fits 
+**PHANGS (HST images): ** https://archive.stsci.edu/hlsp/phangs --> File: HST science images (drz) (hlsp_phangs-hst_hst_wfc3-uvis_<target>_<filter>_v1_exp-drc-sci.fits)
+
 ---
 
 ## Main Features
