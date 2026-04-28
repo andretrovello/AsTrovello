@@ -14,7 +14,7 @@ The respective data cubes can be found downloaded in:
 ```text
     ├── File: <target>.phot.1.fits and <target>.phot.2.fits
 ```
-**PHANGS (HST images): ** https://archive.stsci.edu/hlsp/phangs 
+**PHANGS (HST images):** https://archive.stsci.edu/hlsp/phangs 
 ```text
     ├── File: File: HST science images (drz) (hlsp_phangs-hst_hst_wfc3-uvis_<target>_<filter>_v1_exp-drc-sci.fits)
 ```
