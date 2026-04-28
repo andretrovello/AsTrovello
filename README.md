@@ -36,7 +36,6 @@ The pipeline runs on **Ubuntu Linux** and is optimized for use within a Conda en
       conda env create -f environment.yml -n new_env_name
     ```
     or creating a dedicated environment with:
-    conda env create -f environment.yml -n new_env_name
     ```bash
     conda create -n capivara python=3.10
     conda activate capivara
