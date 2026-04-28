@@ -79,9 +79,18 @@ AsTrovello/
 ├── Codes/
 │   ├── AsTrovello_run.py   # Main execution script (Master)
 │   ├── AsTrovello_lib.py   # Core functions library
-│   └── batch_runner.py     # Automation for multiple galaxies
+│   └── galaxy_loop.py     # Automation for multiple galaxies
 ├── Input/
 │   ├── PHANGS/             # HST images and PSF models
+│       ├── galaxies/
+|       |    ├── galaxies/
+|       |        ├── phangs_hst/
+|       |            ├── ngc.../
+|       ├── PSF/
 │   └── S4G/                # Spitzer/IRAC images and PSFs
+│       ├── galaxies/
+|       |    ├── galaxies/
+|       |        ├── ngc.../
+|       ├── PSF/
 └── Output/                 # Processed FITS and Hypercubes
 ```
