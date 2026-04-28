@@ -26,12 +26,17 @@ The pipeline runs on **Ubuntu Linux** and is optimized for use within a Conda en
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/your-username/AsTrovello.git](https://github.com/your-username/AsTrovello.git)
+    git clone https://github.com/your-username/AsTrovello.git
     cd AsTrovello
     ```
 
 2.  **Setup the environment:**
-    We recommend using the provided `environment.yml` or creating a dedicated environment with:
+    We recommend using the provided `environment.yml` 
+    ```bash
+      conda env create -f environment.yml -n new_env_name
+    ```
+    or creating a dedicated environment with:
+    conda env create -f environment.yml -n new_env_name
     ```bash
     conda create -n capivara python=3.10
     conda activate capivara
