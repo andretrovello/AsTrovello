@@ -4,10 +4,8 @@ from reproject import reproject_interp
 import numpy as np
 import psutil
 import shutil
-import gc
 from tqdm import tqdm  
 from pathlib import Path
-import matplotlib.pyplot as plt
 import os 
 from scipy.signal import fftconvolve
 from collections import defaultdict
