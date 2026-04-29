@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+src/astrovello/main_lib.py
+src/astrovello.egg-info/PKG-INFO
+src/astrovello.egg-info/SOURCES.txt
+src/astrovello.egg-info/dependency_links.txt
+src/astrovello.egg-info/requires.txt
+src/astrovello.egg-info/top_level.txt

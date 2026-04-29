@@ -7,9 +7,8 @@ from astropy.io import fits
 import pandas as pd
 import subprocess
 import shutil
-from scipy.signal import fftconvolve
-from collections import defaultdict
-from AsTrovello_lib import * 
+import astrovello as aat
+import numpy as np
 
 def main():
     # --- COMMAND LINE ARGUMENT PARSING ---
@@ -66,7 +65,7 @@ def main():
 
         for file in sci_files_s4g:
             # Match Spitzer resolution/grid to HST grid
-            S4G2PHANGS_reproject(file, phangs_ref_file, output_path = reprojected_path)
+            aat.S4G2PHANGS_reproject(file, phangs_ref_file, output_path = reprojected_path)
 
 # --------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------ Image convolution --------------------------------------------------
@@ -76,8 +75,8 @@ def main():
 
             # --- PSF RESOLUTION ANALYSIS ---
             # Calculate FWHM for all available filters to find the lowest resolution (Master PSF)
-            fwhm_s4g, _, files_s4g = calculaFWHM_radial_profile(s4g_psf_path)
-            fwhm_phangs, _, files_phangs = calculaFWHM_radial_profile(phangs_psf_path)
+            fwhm_s4g, _, files_s4g = aat.calculaFWHM_radial_profile(s4g_psf_path)
+            fwhm_phangs, _, files_phangs = aat.calculaFWHM_radial_profile(phangs_psf_path)
                 
             todos_fwhm = {**fwhm_s4g, **fwhm_phangs}
             df_fwhm = pd.DataFrame(list(todos_fwhm.items()), columns=['Filtro', 'FWHM_pixels'])
@@ -104,7 +103,7 @@ def main():
 
                 for f_name in s_info['files']:
                     # Clean headers and fix parity for PyPHER compatibility
-                    final_clean_psf(os.path.join(input_p, f_name), os.path.join(output_p, f_name))
+                    aat.final_clean_psf(os.path.join(input_p, f_name), os.path.join(output_p, f_name))
 
             # Locate the Master PSF file after cleaning
             if psf_master_name.upper().startswith('F'):
@@ -114,7 +113,7 @@ def main():
             
             # --- KERNEL GENERATION ---
             # Create shell commands for PyPHER to generate homogenization kernels
-            comandos_pypher = pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, kernel_dir)
+            comandos_pypher = aat.pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, kernel_dir)
 
             print(f"\n--- Creating {len(comandos_pypher)} kernels via PyPHER ---")
             for c in comandos_pypher:
@@ -141,14 +140,14 @@ def main():
             shutil.rmtree(convolved_fits_path_gal)
         
         # Pair images with their specific kernels
-        fftconvolve_dict = convolved_dict(path_phangs = phangs_imgs, \
+        fftconvolve_dict = aat.convolved_dict(path_phangs = phangs_imgs, \
             path_s4g_reprojected = reprojected_path / args.galaxy, path_kernels = kernel_dir)
 
         for k in fftconvolve_dict.keys():
             original_fits = fftconvolve_dict[k]['img']['path']
             kernel_fits = fftconvolve_dict[k]['kernel']['path']
             # Run the convolution (FFT based)
-            galaxy_name = create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True)
+            galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True)
 
         # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
         master_source_dir = reprojected_path / galaxy_name
@@ -173,7 +172,7 @@ def main():
             filter_name = file.name.split('_')[-2]
             print(f'Converting {filter_name} image units to Jy/pixel:')
             # Perform astronomical unit conversion (e/s or MJy/sr -> Jy/pix)
-            new_data, new_header = convert2Jansky(file)
+            new_data, new_header = aat.convert2Jansky(file)
 
             new_hdu = fits.PrimaryHDU(new_data, new_header)
             file_path = file.parent / f'{file.stem}_Jy_per_pixel{file.suffix}'
@@ -211,7 +210,7 @@ def main():
         if aligned_images:
             # --- HYPERCUBE ASSEMBLY ---
             temp_name = output_dir_cube / 'temp_cube.fits'
-            cube, cube_header = create_data_cube(
+            cube, cube_header = aat.create_data_cube(
                 aligned_images, filter_names, ref_file, ref_header, 
                 temp_name, aplicar_mask=APLICAR_MASCARA, N_SIGMA=VALOR_N_SIGMA
             )
@@ -232,7 +231,7 @@ def main():
             cx, cy = int(cube_header['CRPIX1']), int(cube_header['CRPIX2'])
             regions = [(output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_zoomed.fits', 
                         cx-150, cx+150, cy-150, cy+150)]
-            create_cutouts(cube, cube_header, regions)
+            aat.create_cutouts(cube, cube_header, regions)
 
 if __name__ == "__main__":
     main()
