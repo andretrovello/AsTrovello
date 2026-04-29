@@ -96,15 +96,15 @@ AsTrovello/
 │   └── galaxy_loop.py     # Automation for multiple galaxies
 ├── Input/
 │   ├── PHANGS/             # HST images and PSF models
-│       ├── galaxies/
-|       |    ├── galaxies/
-|       |        ├── phangs_hst/
-|       |            ├── ngc.../
-|       ├── PSF/
+│   |    ├── galaxies/
+|   |    |    ├── galaxies/
+|   |    |        ├── phangs_hst/
+|   |    |            ├── ngc.../
+|   |    ├── PSF/
 │   └── S4G/                # Spitzer/IRAC images and PSFs
-│       ├── galaxies/
-|       |    ├── galaxies/
-|       |        ├── ngc.../
-|       ├── PSF/
+│        ├── galaxies/
+|        |    ├── galaxies/
+|        |        ├── ngc.../
+|        ├── PSF/
 └── Output/                 # Processed FITS and Hypercubes
 ```
