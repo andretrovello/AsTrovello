@@ -15,6 +15,7 @@ Requires-Dist: reproject>=0.14
 Requires-Dist: regions>=0.10
 Requires-Dist: scikit-image>=0.20
 Requires-Dist: tqdm
+Requires-Dist: psutil
 Requires-Dist: pyyaml
 Requires-Dist: pypher>=0.7.3
 Requires-Dist: pyreadr>=0.5.4

@@ -22,6 +22,7 @@ dependencies = [
     "regions>=0.10",
     "scikit-image>=0.20",
     "tqdm",
+    "psutil",
     "pyyaml",
     "pypher>=0.7.3",
     "pyreadr>=0.5.4",
@@ -33,3 +34,8 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+
+[project.scripts]
+astrovello = 'astrovello.astrovello_cli:main'
+astrovello-batch = 'astrovello.batch_runner:main'

@@ -12,7 +12,7 @@ from .convolution import (
 
 from .units import convert2Jansky
 
-from .masking import (
+from .mask import (
     phangs_intersection_mask,
     soma_img,
     mask,

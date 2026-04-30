@@ -2,6 +2,8 @@ README.md
 pyproject.toml
 src/astrovello/__init__.py
 src/astrovello/alignment.py
+src/astrovello/astrovello_cli.py
+src/astrovello/batch_runner.py
 src/astrovello/convolution.py
 src/astrovello/cube.py
 src/astrovello/mask.py
@@ -10,5 +12,6 @@ src/astrovello/utils.py
 src/astrovello.egg-info/PKG-INFO
 src/astrovello.egg-info/SOURCES.txt
 src/astrovello.egg-info/dependency_links.txt
+src/astrovello.egg-info/entry_points.txt
 src/astrovello.egg-info/requires.txt
 src/astrovello.egg-info/top_level.txt

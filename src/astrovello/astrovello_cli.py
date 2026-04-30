@@ -31,12 +31,15 @@ def main():
     # --- DYNAMIC PATH CONFIGURATION ---
     # Identify the location of the running script to define the project root (BASE_DIR)
     # This ensures the code runs correctly regardless of where the AsTrovello folder is placed
-    script_path = Path(__file__).resolve()
-    BASE_DIR = script_path.parent.parent
+    BASE_DIR = Path(os.getcwd())
     print(f'Root Directory: {BASE_DIR}')
 
     # Define Input hierarchy (PHANGS/HST and S4G/Spitzer)
     input_dir = BASE_DIR / 'Input'
+    if not input_dir.exists():
+        print(f"❌ Erro: Pasta 'Input' não encontrada em {BASE_DIR}")
+        print("Certifique-se de estar na pasta correta do seu projeto.")
+        return 
     phangs_dir = input_dir / "PHANGS" 
     phangs_imgs = phangs_dir / 'galaxies' / "phangs_hst" / args.galaxy.lower()
     phangs_psf_path = phangs_dir / 'PSF'
@@ -94,7 +97,7 @@ def main():
                 'S4G': {'path': s4g_psf_path, 'files': files_s4g}
             }
 
-            print(f'\nInitiating PSF cleaning...')
+            print('\nInitiating PSF cleaning...')
             for s_name, s_info in survey_data.items():
                 print(f'\nCleaning {s_name} PSFs...')
                 input_p = os.path.expanduser(s_info['path'])
