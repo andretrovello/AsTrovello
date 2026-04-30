@@ -1,6 +1,12 @@
 README.md
 pyproject.toml
-src/astrovello/main_lib.py
+src/astrovello/__init__.py
+src/astrovello/alignment.py
+src/astrovello/convolution.py
+src/astrovello/cube.py
+src/astrovello/mask.py
+src/astrovello/units.py
+src/astrovello/utils.py
 src/astrovello.egg-info/PKG-INFO
 src/astrovello.egg-info/SOURCES.txt
 src/astrovello.egg-info/dependency_links.txt
