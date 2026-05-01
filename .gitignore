@@ -2,11 +2,13 @@
 *.fits
 *.fits.gz
 *.fts
-*.egg-info/
+
 
 # Ignore folders
 Input/
 Output/
+src/*.egg-info/
+dist/
 
 # Ignore temp files
 __pycache__/

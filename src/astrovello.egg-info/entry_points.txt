@@ -1,3 +1,0 @@
-[console_scripts]
-astrovello = astrovello.astrovello_cli:main
-astrovello-batch = astrovello.batch_runner:main
