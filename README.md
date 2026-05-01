@@ -49,8 +49,8 @@ pip install git+https://github.com/your-username/AsTrovello.git
 
 **Setting up a dedicated environment:**
 ```bash
-conda create -n capivara python=3.10
-conda activate capivara
+conda create -n <env_name> python=3.10
+conda activate <env_name>
 pip install astrovello
 ```
 
