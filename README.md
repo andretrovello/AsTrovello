@@ -56,6 +56,55 @@ pip install astrovello
 
 ---
 
+## How to Run the Command Line Interface (CLI)
+
+AsTrovello can be executed as a CLI using
+
+```bash
+astrovello --galaxy [GALAXY_NAME] --mode [MODE] [FLAGS]
+```
+### Execution Modes
+
+The pipeline can be executed in different stages depending on your needs. Use the `--mode` argument to select one of the following:
+
+| Mode | Description |
+| :--- | :--- |
+| **`full`** | **Complete Pipeline:** Executes alignment, PSF homogenization, convolution, and hypercube creation in a single run. |
+| **`alignment_only`** | **Spatial Alignment:** Only reprojects S4G images to the PHANGS pixel grid. Use this to check coordinate consistency. |
+| **`conv_only`** | **Resolution Matching:** Performs PSF cleaning, kernel generation via PyPHER, and image convolution. |
+| **`cube_only`** | **Data Integration:** Skips processing and builds the final 3D hypercube using existing convolved files. |
+
+> **Note:** When using `conv_only` or `full`, remember to include the `--create_kernel` flag if you need to generate new homogenization kernels for the current galaxy.
+
+The command must be executed inside the same directory where galaxy data and survey PSFs are located. These inputs need to be organized as follows:
+
+```text
+BASE_DIRECTORY/
+├── Input/
+│   ├── PHANGS/             # HST images and PSF models
+│   |    ├── galaxies/
+|   |    |    ├── galaxies/
+|   |    |        ├── phangs_hst/
+|   |    |            ├── ngc.../
+|   |    ├── PSF/
+│   └── S4G/                # Spitzer/IRAC images and PSFs
+│        ├── galaxies/
+|        |    ├── galaxies/
+|        |        ├── ngc.../
+|        ├── PSF/
+```
+
+
+### Usage Examples
+
+Here are the most common ways to run the **AsTrovello** pipeline:
+
+#### 1. Full Processing (Standard)
+Runs everything from alignment to the final hypercube. Ideal for a first-time run on a new galaxy.
+```bash
+python Codes/AsTrovello_run.py --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
+```
+
 ## Quick Start
 
 ```python
