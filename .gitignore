@@ -2,6 +2,7 @@
 *.fits
 *.fits.gz
 *.fts
+*.egg-info/
 
 # Ignore folders
 Input/
