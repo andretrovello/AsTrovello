@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "astrovello"
 version = "0.1.2"
 authors = [
-  { name="André Almeida Trovello", email="seu-email@usp.br" },
+  { name="André Almeida Trovello", email="andretrovello@usp.br" },
 ]
 description = "A framework for galaxy morphology and non-parametric decomposition."
 readme = "README.md"
