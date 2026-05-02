@@ -157,7 +157,7 @@ AsTrovello/
 ### units
 `convert2Jansky(fits_file)` — Converts HST (`ELECTRONS/S`) and Spitzer (`MJy/sr`) images to `Jy/pixel`.
 
-### masking
+### mask
 `mask(data, N_SIGMA=3)` — Sky subtraction and signal mask generation using MAD-based sigma clipping.
 
 ### cube
