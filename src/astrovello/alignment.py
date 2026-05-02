@@ -18,6 +18,7 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
     sci_file_s4g = s4g_file_path.name
     # Extract galaxy name and filter index (e.g., IRAC1) from filename
     galaxy_name, filter_mode = sci_file_s4g.split('.')[0].lower(), sci_file_s4g.split('.')[-2]
+    if 'mosaic' in galaxy_name: galaxy_name.replace('mosaic',  '') 
 
     # Initialize WCS (World Coordinate System) for both images
     w_phangs = WCS(hdu_phangs.header)
