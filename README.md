@@ -81,17 +81,17 @@ The command must be executed inside the same directory where galaxy data and sur
 ```text
 BASE_DIRECTORY/
 ├── Input/
-│   ├── PHANGS/             # HST images and PSF models
-│   |    ├── galaxies/
-|   |    |    ├── galaxies/
-|   |    |        ├── phangs_hst/
-|   |    |            ├── ngc.../
-|   |    ├── PSF/
-│   └── S4G/                # Spitzer/IRAC images and PSFs
-│        ├── galaxies/
-|        |    ├── galaxies/
-|        |        ├── ngc.../
-|        ├── PSF/
+   ├── PHANGS/             # HST images and PSF models
+   |    ├── galaxies/
+   |    |    ├── galaxies/
+   |    |        ├── phangs_hst/
+   |    |            ├── ngc.../
+   |    ├── PSF/
+   └── S4G/                # Spitzer/IRAC images and PSFs
+        ├── galaxies/
+        |    ├── galaxies/
+        |        ├── ngc.../
+        ├── PSF/
 ```
 
 
@@ -102,7 +102,7 @@ Here are the most common ways to run the **AsTrovello** pipeline:
 #### 1. Full Processing (Standard)
 Runs everything from alignment to the final hypercube. Ideal for a first-time run on a new galaxy.
 ```bash
-python Codes/AsTrovello_run.py --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
+astrovello --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
 ```
 
 ## Quick Start
@@ -134,10 +134,9 @@ AsTrovello/
 │       ├── units.py         # Flux unit conversion to Jy/pixel
 │       ├── masking.py       # Sky background subtraction and signal masking
 │       ├── cube.py          # 3D FITS hypercube creation and cutouts
-│       └── utils.py         # Utility functions
-├── examples/
-│   ├── AsTrovello_run.py    # Main execution script
-│   └── galaxy_loop.py       # Batch processing for multiple galaxies
+│       ├── utils.py         # Utility functions
+│       ├── astrovello_cli.py    # Main execution script
+│       └── batch_runner.py       # Batch processing for multiple galaxies
 ├── pyproject.toml
 └── README.md
 ```
