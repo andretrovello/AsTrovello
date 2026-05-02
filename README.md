@@ -176,6 +176,3 @@ Full list available in `pyproject.toml`.
 
 ---
 
-## License
-
-MIT License. See `LICENSE` for details.
