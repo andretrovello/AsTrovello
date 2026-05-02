@@ -190,6 +190,8 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False)
     if 'phangs-hst' in info:
         convolved_img = fftconvolve(img_data, kernel_norm, mode='same')
         gal_name, survey, filt = info[4].lower(), 'phangs', info[5].lower()
+        if 'mosaic' in gal_name:
+            gal_name = gal_name.replace('mosaic', '')
     elif 's4g' in original_file_name:
         # IRAC images often have NaNs that break FFT; convert to zero
         img_data_limpa = np.nan_to_num(img_data, nan=0.0)
