@@ -228,13 +228,6 @@ def main():
             # Memory cleanup
             del aligned_images
             gc.collect()
-            
-            # --- AUTOMATED ZOOM (Cutout) ---
-            # Create a 300x300 pixel zoom centered on the reference coordinate (CRPIX)
-            cx, cy = int(cube_header['CRPIX1']), int(cube_header['CRPIX2'])
-            regions = [(output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_zoomed.fits', 
-                        cx-150, cx+150, cy-150, cy+150)]
-            aat.create_cutouts(cube, cube_header, regions)
 
 if __name__ == "__main__":
     main()

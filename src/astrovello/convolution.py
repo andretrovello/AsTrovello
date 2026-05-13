@@ -5,7 +5,8 @@ import shutil
 from scipy.signal import fftconvolve
 from collections import defaultdict
 from pathlib import Path
-# ----------------------------------------------------------------------------------------------------------------------
+from astropy.nddata import block_reduce # Added for PSF downsampling
+
 # -------------------------------------------- Image convolution ------------------------------------------------------
 
 def get_fwhm_simple(data):
@@ -68,50 +69,72 @@ def calculaFWHM_radial_profile(files_path):
 
 def final_clean_psf(input_file, output_file):
     """
-    Standardizes PSF headers for PyPHER compatibility.
-    Calculates pixel scales and ensures correct centering and coordinate keywords.
+    Standardizes PSF headers and performs true downsampling for PyPHER compatibility.
+    Calculates pixel scales, bins down oversampled PSFs, and ensures correct 
+    centering and coordinate keywords.
     """
     if 'WFC3UV' in input_file:
-        # HST scale: native 0.04"/pix, oversampled 4x
-        pixel_scale_arcsec = 0.0395 / 4.0 
+        # HST scale: native 0.0395"/pix. We will bin down the 4x oversampled data.
+        pixel_scale_arcsec = 0.0395 
         pixel_scale_deg = pixel_scale_arcsec / 3600.0
 
         with fits.open(input_file, ignore_missing_end=True) as hdu:
             # Average the PSF cube to get a 2D representative PSF
             data_2d = np.mean(hdu[0].data, axis=0)
-            new_hdu = fits.PrimaryHDU(data_2d)
+            
+            # --- THE MAGIC HAPPENS HERE ---
+            # Downsample the array by a factor of 4 (summing blocks of 4x4 pixels)
+            data_2d_binned = block_reduce(data_2d, block_size=4, func=np.sum)
+            
+            # Force odd parity: PyPHER prefers kernels/PSFs with an odd number of pixels
+            if data_2d_binned.shape[0] % 2 == 0:
+                data_2d_binned = data_2d_binned[:-1, :-1]
+                
+            # Normalize to ensure flux conservation
+            data_2d_binned = data_2d_binned / np.sum(data_2d_binned)
+
+            new_hdu = fits.PrimaryHDU(data_2d_binned)
             
             # Inject WCS keywords required by PyPHER/Astropy
             new_hdu.header.update({
                 'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN',
                 'CRVAL1': 0.0, 'CRVAL2': 0.0,
-                'CRPIX1': 51.0, 'CRPIX2': 51.0,
+                'CRPIX1': (data_2d_binned.shape[1] // 2) + 1, 'CRPIX2': (data_2d_binned.shape[0] // 2) + 1,
                 'CDELT1': -pixel_scale_deg, 'CDELT2': pixel_scale_deg,
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER (Binned 4x): {os.path.basename(output_file)}")
 
     elif any(x in input_file for x in ['IRAC1', 'IRAC2']):
-        # Spitzer scale: native ~1.22"/pix, oversampled 5x
-        pixel_scale_arcsec = 1.221/5.0 if 'IRAC1' in input_file else 1.213/5.0
+        # Spitzer scale: native ~1.22"/pix. We will bin down the 5x oversampled data.
+        pixel_scale_arcsec = 1.221 if 'IRAC1' in input_file else 1.213
         pixel_scale_deg = pixel_scale_arcsec / 3600.0
 
         with fits.open(input_file) as hdu:
             data_raw = hdu[0].data
-            # Force odd parity: PyPHER prefers kernels/PSFs with an odd number of pixels
-            data_2d = data_raw[:-1, :-1] if data_raw.shape[0] % 2 == 0 else data_raw
+            
+            # --- THE MAGIC HAPPENS HERE ---
+            # Downsample the array by a factor of 5
+            data_2d_binned = block_reduce(data_raw, block_size=5, func=np.sum)
+            
+            # Force odd parity
+            if data_2d_binned.shape[0] % 2 == 0:
+                data_2d_binned = data_2d_binned[:-1, :-1]
+                
+            # Normalize to ensure flux conservation
+            data_2d_binned = data_2d_binned / np.sum(data_2d_binned)
 
-            new_hdu = fits.PrimaryHDU(data_2d)
+            new_hdu = fits.PrimaryHDU(data_2d_binned)
             new_hdu.header.update({
                 'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN',
                 'CRVAL1': 0.0, 'CRVAL2': 0.0,
-                'CRPIX1': (data_2d.shape[1] // 2) + 1, 'CRPIX2': (data_2d.shape[0] // 2) + 1,
+                'CRPIX1': (data_2d_binned.shape[1] // 2) + 1, 'CRPIX2': (data_2d_binned.shape[0] // 2) + 1,
                 'CDELT1': -pixel_scale_deg, 'CDELT2': pixel_scale_deg,
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER (Binned 5x): {os.path.basename(output_file)}")
 
 def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
     """
@@ -209,4 +232,3 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False)
     print(f'Convolved FITS saved to: {out_file}\n' + 100*'#')
 
     if GAL_NAME: return gal_name
-

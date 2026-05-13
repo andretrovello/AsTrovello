@@ -23,12 +23,16 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
     if aplicar_mask:
         summed = soma_img(aligned_images, ref_file)
         _, mask_final = mask(summed, N_SIGMA=N_SIGMA)
+        # 2. Fill the cube layers, setting non-mask regions to NaN and 
+        for i, img_atual in enumerate(aligned_images):
+            sky = np.nanmedian(img_atual[~mask_final])
+            cubo[i, :, :] = np.where(mask_final, img_atual - sky, np.nan) if mask_final is not None else img_atual
+
     else:
         mask_final = phangs_intersection_mask(ref_file)
-
-    # 2. Fill the cube layers, setting non-mask regions to NaN
-    for i, img_atual in enumerate(aligned_images):
-        cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
+        # 2. Fill the cube layers, setting non-mask regions to NaN
+        for i, img_atual in enumerate(aligned_images):
+            cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
 
     # 3. Bounding Box Cutout: Shrink the cube to the relevant area plus padding
     y_off, x_off = 0, 0
@@ -40,7 +44,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
             x_min, x_max = max(0, x_min - padding), min(nx, x_max + padding)
             cubo = cubo[:, y_min:y_max, x_min:x_max]
             y_off, x_off = y_min, x_min
-            print(f"✂️ Bounding box cutout: {ny}x{nx} -> {cubo.shape[1]}x{cubo.shape[2]}")
+            print(f"==> Bounding box cutout: {ny}x{nx} -> {cubo.shape[1]}x{cubo.shape[2]}")
 
     # 4. Construct 3D WCS Header
     # Adjust Reference Pixels (CRPIX) to reflect the BBox shift
@@ -62,17 +66,3 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
         
     fits.writeto(output_filename, cubo, header=cube_header, overwrite=True)
     return cubo, cube_header
-
-def create_cutouts(cube, cube_header, regions):
-    """Extracts spatial sub-cubes (zooms) from the main hypercube."""
-    for path, x_start, x_end, y_start, y_end in regions:
-        if x_end > cube.shape[2] or y_end > cube.shape[1] or x_start < 0 or y_start < 0:
-            print(f"Warning: Zoom '{path.name}' out of bounds. Continuing.")
-            continue
-        
-        cube_cut = cube[:, y_start:y_end, x_start:x_end]
-        cut_h = cube_header.copy()
-        cut_h['CRPIX1'] -= x_start
-        cut_h['CRPIX2'] -= y_start
-        fits.writeto(path, cube_cut, header=cut_h, overwrite=True)
-        print(f"==> Cutout saved to: {path.name}")
