@@ -19,8 +19,7 @@ from .mask import (
 )
 
 from .cube import (
-    create_data_cube,
-    create_cutouts,
+    create_data_cube
 )
 
 from .utils import (
