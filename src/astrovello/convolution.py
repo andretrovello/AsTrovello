@@ -82,7 +82,6 @@ def final_clean_psf(input_file, output_file):
             # Average the PSF cube to get a 2D representative PSF
             data_2d = np.mean(hdu[0].data, axis=0)
             
-            # --- THE MAGIC HAPPENS HERE ---
             # Downsample the array by a factor of 4 (summing blocks of 4x4 pixels)
             data_2d_binned = block_reduce(data_2d, block_size=4, func=np.sum)
             
