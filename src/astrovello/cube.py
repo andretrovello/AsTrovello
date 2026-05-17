@@ -27,6 +27,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
         for i, img_atual in enumerate(aligned_images):
             sky = np.nanmedian(img_atual[~mask_final])
             cubo[i, :, :] = np.where(mask_final, img_atual - sky, np.nan) if mask_final is not None else img_atual
+            cubo[i, :, :] = cubo[i, :, :][cubo[i, :, :] < 0] = np.nan
 
     else:
         mask_final = phangs_intersection_mask(ref_file)
