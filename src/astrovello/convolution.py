@@ -6,7 +6,7 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 from scipy.ndimage import binary_dilation, label
-from astropy.nddata import block_reduce # Added for PSF downsampling
+from astropy.nddata import block_reduce 
 
 # -------------------------------------------- Image convolution ------------------------------------------------------
 
@@ -189,7 +189,7 @@ def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels):
                 fftconvolve_dict[f][key]['name'] = file.name
     return fftconvolve_dict
 
-# Test astropy convolve
+# PHANGS convolution function 
 
 def convolve_phangs(img_data, kernel_norm, kernel_size):
     """
@@ -248,6 +248,7 @@ def convolve_phangs(img_data, kernel_norm, kernel_size):
 
     return convolved_img
 
+# S4G convolution function 
 
 def convolve_irac(img_data, kernel_norm, kernel_size):
     """
@@ -284,9 +285,8 @@ def convolve_irac(img_data, kernel_norm, kernel_size):
 
     return convolved_img
 
-
-# Adicione isso temporariamente no create_convolvedFITS
-# logo após a convolução, antes de salvar
+# Diganose negatives
+# In case negative number Warning appears
 
 def diagnose_negatives(convolved_img, img_data, filt, survey):
     """
@@ -342,6 +342,8 @@ def diagnose_negatives(convolved_img, img_data, filt, survey):
     print(f"Negatives within 3-sigma of noise: {np.sum(convolved_img < -3*noise)}")
     print(f"Negatives within 1-sigma of noise: {np.sum(convolved_img < -1*noise)}")
     print(50*'-')
+
+# Convolution function
 
 def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False):
     """
