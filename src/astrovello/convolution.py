@@ -114,7 +114,6 @@ def final_clean_psf(input_file, output_file):
         with fits.open(input_file) as hdu:
             data_raw = hdu[0].data
             
-            # --- THE MAGIC HAPPENS HERE ---
             # Downsample the array by a factor of 5
             data_2d_binned = block_reduce(data_raw, block_size=5, func=np.sum)
             
