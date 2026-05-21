@@ -195,12 +195,12 @@ def convolve_phangs(img_data, kernel_norm, kernel_size):
     Performs FFT-based convolution for HST/PHANGS images.
     
     PHANGS images contain two types of invalid pixels:
-    - Border zeros: outside the detector field of view
-    - Internal zeros: dead pixels or masked regions
+    - Border NaNs: outside the detector field of view
+    - Internal NaNs: dead pixels or masked regions
     
     Strategy:
-    - Border zeros → fill=0 + expand mask (no real signal to interpolate)
-    - Internal zeros → interpolate (surrounded by real signal)
+    - Border NaNs → fill=0 + expand mask (no real signal to interpolate)
+    - Internal NaNs → interpolate (surrounded by real signal)
     """
     # Convert zeros to NaN for proper treatment
     img_nan = img_data.copy().astype(float)
