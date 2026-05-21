@@ -8,6 +8,7 @@ version = "0.1.2"
 authors = [
   { name="André Almeida Trovello", email="andretrovello@usp.br" },
 ]
+license = {text = "MIT"} 
 description = "A framework for galaxy morphology and non-parametric decomposition."
 readme = "README.md"
 requires-python = ">=3.10"
