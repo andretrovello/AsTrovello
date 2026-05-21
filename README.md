@@ -3,6 +3,7 @@
 </p>
 
 ## AsTrovello
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 **AsTrovello** is a Python library for multi-wavelength galaxy data analysis. It integrates high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**, providing tools for image alignment, PSF homogenization, unit conversion, and 3D hypercube creation.
 
