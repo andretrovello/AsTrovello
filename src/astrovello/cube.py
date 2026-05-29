@@ -23,12 +23,24 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
     if aplicar_mask:
         summed = soma_img(aligned_images, ref_file)
         _, mask_final = mask(summed, N_SIGMA=N_SIGMA)
-        # 2. Fill the cube layers, setting non-mask regions to NaN and 
-        for i, img_atual in enumerate(aligned_images):
-            sky = np.nanmedian(img_atual[~mask_final])
-            cubo[i, :, :] = np.where(mask_final, img_atual - sky, np.nan) if mask_final is not None else img_atual
-            cubo[i, :, :] = cubo[i, :, :][cubo[i, :, :] < 0] = np.nan
 
+        # 2. Fill the cube layers, setting non-mask regions to NaN
+        for i, img_atual in enumerate(aligned_images):
+
+            if is_error:
+                # Error cube: apply mask only, no sky subtraction
+                # Errors represent uncertainty — there is no physical background to remove
+                cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
+
+            else:
+                # Science cube: subtract sky background before masking
+                sky = np.nanmedian(img_atual[~mask_final])
+                layer = np.where(mask_final, img_atual - sky, np.nan) if mask_final is not None else img_atual
+
+                # Set residual negatives to NaN after sky subtraction
+                # These are unphysical pixels below the noise floor
+                layer[layer < 0] = np.nan
+                cubo[i, :, :] = layer
     else:
         mask_final = phangs_intersection_mask(ref_file)
         # 2. Fill the cube layers, setting non-mask regions to NaN

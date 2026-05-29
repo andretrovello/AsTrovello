@@ -170,7 +170,7 @@ def main():
                 # Run the convolution (FFT based)
                 galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True, error = True)
 
-            # Handle the Master image (it doesn't need convolution, just a value conversion to variance)
+            # Handle the Master image (it doesn't need convolution, but it error map needs to be converted to sigma in all cases)
             master_source_dir = reprojected_path / galaxy_name
             master_source_name = f'{galaxy_name}_s4g_{psf_master_name}_on_phangs_projection_error.fits'
             master_source_path = master_source_dir / master_source_name
@@ -227,10 +227,10 @@ def main():
         conv_files = list(convolved_fits_path_gal.glob('*.fits'))
 
         if args.error:
-            conv_files_list = [f for f in conv_files if f.name.endswith('error.fits')]
+            conv_files_list = [f for f in conv_files if f.name.endswith(('_master_error.fits', '_convolved_error.fits'))]
 
         else:
-            conv_files_list = [f for f in conv_files if f.name.endswith(('master.fits', 'convolved.fits'))]
+            conv_files_list = [f for f in conv_files if f.name.endswith(('_master.fits', '_convolved.fits'))]
 
         for file in conv_files_list:
             filter_name = file.name.split('_')[-2]

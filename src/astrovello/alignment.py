@@ -65,12 +65,16 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path, error
         print(f"==> Directory created: {output_directory}")
 
     if error:
-        output_name = f'{galaxy_name}_s4g_irac1_on_phangs_projection_error.fits'
-        fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
-        print('\n' + 100*'#' + f'\nReprojected FITS file: {output_name}\n' + 100*'#')
-        output_name = f'{galaxy_name}_s4g_irac2_on_phangs_projection_error.fits'
-        fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
-        print('\n' + 100*'#' + f'\nReprojected FITS file: {output_name}\n' + 100*'#')
+        # sigma file applies to both IRAC channels — save same array for both
+        for channel, output_name in [
+            ('irac1', f'{galaxy_name}_s4g_irac1_on_phangs_projection_error.fits'),
+            ('irac2', f'{galaxy_name}_s4g_irac2_on_phangs_projection_error.fits')
+        ]:
+            fits.writeto(os.path.join(output_directory, output_name),
+                        array, s4g_new_header, overwrite=True)
+            print(f'Reprojected error FITS: {output_name}')
+
+        s4g_new_header['COMMENT'] = 'Same sigma map applied to both IRAC1 and IRAC2 channels'
     else:
         output_name = f'{galaxy_name}_s4g_irac{filter_mode}_on_phangs_projection.fits'
         fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)

@@ -216,10 +216,13 @@ def convolve_phangs(img_data, kernel, kernel_size, is_error=False):
     if is_error:
         # PHANGS error maps are provided as inverse variance (1/sigma^2).
         # We perform a safe division to avoid infinities where the weight is zero.
+        kernel_to_use = kernel**2
         with np.errstate(divide='ignore', invalid='ignore'):
             img_nan = np.where(img_data > 0, 1.0 / img_data, np.nan)
     else:
         # Convert zeros to NaN for proper treatment during convolution
+        kernel_to_use = kernel
+        img_to_conv = img_data
         img_nan[img_data == 0] = np.nan
         
     nan_mask = np.isnan(img_nan)
@@ -246,7 +249,7 @@ def convolve_phangs(img_data, kernel, kernel_size, is_error=False):
     # Convolve - interpolate handles internal NaNs correctly
     convolved_img = convolve_fft(
         img_to_conv,
-        kernel,
+        kernel_to_use,
         normalize_kernel = False,  # Kernel normalization is handled in the main wrapper
         nan_treatment    = 'interpolate',
         preserve_nan     = False, 
@@ -279,13 +282,15 @@ def convolve_irac(img_data, kernel, kernel_size, is_error=False):
         # S4G error maps are provided as standard deviation (sigma).
         # We square it to perform variance propagation.
         data_to_conv = img_data**2
+        kernel_to_use = kernel**2
     else:
         data_to_conv = img_data.copy()
+        kernel_to_use = kernel
 
     # Convolve with fill=0 to avoid interpolating across the NaN gap
     convolved_img = convolve_fft(
         data_to_conv,
-        kernel,
+        kernel_to_use,
         normalize_kernel = False,
         nan_treatment    = 'fill',
         fill_value       = 0.0,
@@ -384,9 +389,6 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False,
         raise ValueError(f"Kernel {kernel_fits} has zero sum — invalid kernel!")
     
     kernel_norm = kernel_data / np.sum(kernel_data)
-    
-    # Select the appropriate kernel format based on the error flag
-    kernel_to_use = kernel_norm**2 if error else kernel_norm
     kernel_size = kernel_data.shape[0]
 
     original_file_name = original_fits.name if hasattr(original_fits, 'name') else os.path.basename(original_fits)
@@ -394,7 +396,7 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False,
 
     # Execute survey-specific convolution pipelines
     if 'phangs-hst' in info:
-        convolved_img = convolve_phangs(img_data, kernel_to_use, kernel_size, is_error=error)
+        convolved_img = convolve_phangs(img_data, kernel_norm, kernel_size, is_error=error)
         gal_name, survey, filt = info[4].lower(), 'phangs', info[5].lower()
         if 'mosaic' in gal_name:
             gal_name = gal_name.replace('mosaic', '')
@@ -419,7 +421,7 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False,
             diagnose_negatives(convolved_img, img_data, filt, survey)
 
     # --- Save convolved FITS ---
-    convolved_fits = fits.PrimaryHDU(data=convolved_img, header=img_header)
+    convolved_fits = fits.PrimaryHDU(data = convolved_img, header = img_header)
     print(100*'#' + f'\nConvolving {filt} filter from {survey} survey (Error Map: {error}):')
 
     output_path = output_dir / gal_name
