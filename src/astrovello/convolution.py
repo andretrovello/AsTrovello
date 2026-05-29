@@ -2,7 +2,8 @@ import numpy as np
 import os
 from astropy.io import fits
 import shutil
-from scipy.signal import fftconvolve
+from astropy.convolution import convolve_fft
+from scipy.ndimage import label, binary_dilation
 from collections import defaultdict
 from pathlib import Path
 # ----------------------------------------------------------------------------------------------------------------------
@@ -68,50 +69,70 @@ def calculaFWHM_radial_profile(files_path):
 
 def final_clean_psf(input_file, output_file):
     """
-    Standardizes PSF headers for PyPHER compatibility.
-    Calculates pixel scales and ensures correct centering and coordinate keywords.
+    Standardizes PSF headers and performs true downsampling for PyPHER compatibility.
+    Calculates pixel scales, bins down oversampled PSFs, and ensures correct 
+    centering and coordinate keywords.
     """
     if 'WFC3UV' in input_file:
-        # HST scale: native 0.04"/pix, oversampled 4x
-        pixel_scale_arcsec = 0.0395 / 4.0 
+        # HST scale: native 0.0395"/pix. We will bin down the 4x oversampled data.
+        pixel_scale_arcsec = 0.0395 
         pixel_scale_deg = pixel_scale_arcsec / 3600.0
 
         with fits.open(input_file, ignore_missing_end=True) as hdu:
             # Average the PSF cube to get a 2D representative PSF
             data_2d = np.mean(hdu[0].data, axis=0)
-            new_hdu = fits.PrimaryHDU(data_2d)
+            
+            # Downsample the array by a factor of 4 (summing blocks of 4x4 pixels)
+            data_2d_binned = block_reduce(data_2d, block_size=4, func=np.sum)
+            
+            # Force odd parity: PyPHER prefers kernels/PSFs with an odd number of pixels
+            if data_2d_binned.shape[0] % 2 == 0:
+                data_2d_binned = data_2d_binned[:-1, :-1]
+                
+            # Normalize to ensure flux conservation
+            data_2d_binned = data_2d_binned / np.sum(data_2d_binned)
+
+            new_hdu = fits.PrimaryHDU(data_2d_binned)
             
             # Inject WCS keywords required by PyPHER/Astropy
             new_hdu.header.update({
                 'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN',
                 'CRVAL1': 0.0, 'CRVAL2': 0.0,
-                'CRPIX1': 51.0, 'CRPIX2': 51.0,
+                'CRPIX1': (data_2d_binned.shape[1] // 2) + 1, 'CRPIX2': (data_2d_binned.shape[0] // 2) + 1,
                 'CDELT1': -pixel_scale_deg, 'CDELT2': pixel_scale_deg,
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER (Binned 4x): {os.path.basename(output_file)}")
 
     elif any(x in input_file for x in ['IRAC1', 'IRAC2']):
-        # Spitzer scale: native ~1.22"/pix, oversampled 5x
-        pixel_scale_arcsec = 1.221/5.0 if 'IRAC1' in input_file else 1.213/5.0
+        # Spitzer scale: native ~1.22"/pix. We will bin down the 5x oversampled data.
+        pixel_scale_arcsec = 1.221 if 'IRAC1' in input_file else 1.213
         pixel_scale_deg = pixel_scale_arcsec / 3600.0
 
         with fits.open(input_file) as hdu:
             data_raw = hdu[0].data
-            # Force odd parity: PyPHER prefers kernels/PSFs with an odd number of pixels
-            data_2d = data_raw[:-1, :-1] if data_raw.shape[0] % 2 == 0 else data_raw
+            
+            # Downsample the array by a factor of 5
+            data_2d_binned = block_reduce(data_raw, block_size=5, func=np.sum)
+            
+            # Force odd parity
+            if data_2d_binned.shape[0] % 2 == 0:
+                data_2d_binned = data_2d_binned[:-1, :-1]
+                
+            # Normalize to ensure flux conservation
+            data_2d_binned = data_2d_binned / np.sum(data_2d_binned)
 
-            new_hdu = fits.PrimaryHDU(data_2d)
+            new_hdu = fits.PrimaryHDU(data_2d_binned)
             new_hdu.header.update({
                 'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN',
                 'CRVAL1': 0.0, 'CRVAL2': 0.0,
-                'CRPIX1': (data_2d.shape[1] // 2) + 1, 'CRPIX2': (data_2d.shape[0] // 2) + 1,
+                'CRPIX1': (data_2d_binned.shape[1] // 2) + 1, 'CRPIX2': (data_2d_binned.shape[0] // 2) + 1,
                 'CDELT1': -pixel_scale_deg, 'CDELT2': pixel_scale_deg,
                 'PIXSCALE': pixel_scale_arcsec
             })
             new_hdu.writeto(output_file, overwrite=True)
-            print(f"==> File ready to be applied in PyPHER: {os.path.basename(output_file)}")
+            print(f"==> File ready to be applied in PyPHER (Binned 5x): {os.path.basename(output_file)}")
 
 def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
     """
@@ -144,69 +165,268 @@ def pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir):
 
     return comandos_pypher
 
-def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels):
+def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels, error = False):
     """
     Organizes all images and kernels into a nested dictionary indexed by filter.
     Used to pair the correct kernel with its corresponding image for convolution.
     """
-    phangs_files = list(path_phangs.glob('*exp-drc-sci.fits'))
-    s4g_files = list(path_s4g_reprojected.glob('*.fits'))
+    if error:
+        phangs_files = list(path_phangs.glob('*err-drc-wht.fits'))
+        s4g_files = list(path_s4g_reprojected.glob('*_error.fits'))
+    else:
+        phangs_files = list(path_phangs.glob('*exp-drc-sci.fits'))
+        all_s4g_files = list(path_s4g_reprojected.glob('*.fits'))
+        s4g_files = [f for f in all_s4g_files if '_error' not in f]
+        
     kernel_files = list(path_kernels.glob('*.fits'))
 
     all_files = phangs_files + s4g_files + kernel_files
     filter_info = [f.name.split('_')[1] for f in sorted(kernel_files)]
 
-    fftconvolve_dict = defaultdict(lambda: {'kernel': {}, 'img': {}}) 
-    for f in filter_info:
-        for file in all_files:
-            file_string = str(file).lower()
-            if f in file_string:
-                key = 'kernel' if 'kernel' in file_string else 'img'
-                fftconvolve_dict[f][key]['path'] = file
-                fftconvolve_dict[f][key]['name'] = file.name
+    if error:
+        fftconvolve_dict = defaultdict(lambda: {'kernel': {}, 'err_img': {}}) 
+        for f in filter_info:
+            for file in all_files:
+                file_string = str(file).lower()
+                if f in file_string:
+                    key = 'kernel' if 'kernel' in file_string else 'err_img'
+                    fftconvolve_dict[f][key]['path'] = file
+                    fftconvolve_dict[f][key]['name'] = file.name
+
+    else:
+        fftconvolve_dict = defaultdict(lambda: {'kernel': {}, 'img': {}}) 
+        for f in filter_info:
+            for file in all_files:
+                file_string = str(file).lower()
+                if f in file_string:
+                    key = 'kernel' if 'kernel' in file_string else 'img'
+                    fftconvolve_dict[f][key]['path'] = file
+                    fftconvolve_dict[f][key]['name'] = file.name
     return fftconvolve_dict
 
-def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False):
+def convolve_phangs(img_data, kernel, kernel_size, is_error=False):
     """
-    Applies the convolution kernel to an image using FFT (Fast Fourier Transform).
-    Standardizes data to handle NaNs and saves the degraded resolution image.
+    Performs FFT-based convolution for HST/PHANGS images.
+    If is_error=True, treats input as a weight map (1/sigma^2) and propagates variance.
+    """
+    img_nan = img_data.copy().astype(float)
+    
+    if is_error:
+        # PHANGS error maps are provided as inverse variance (1/sigma^2).
+        # We perform a safe division to avoid infinities where the weight is zero.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            img_nan = np.where(img_data > 0, 1.0 / img_data, np.nan)
+    else:
+        # Convert zeros to NaN for proper treatment during convolution
+        img_nan[img_data == 0] = np.nan
+        
+    nan_mask = np.isnan(img_nan)
+
+    # --- Separate border NaNs from internal NaNs ---
+    # Border mask: NaNs touching the image edges
+    border_seed = np.zeros_like(nan_mask)
+    border_seed[0, :]  = nan_mask[0, :]
+    border_seed[-1, :] = nan_mask[-1, :]
+    border_seed[:, 0]  = nan_mask[:, 0]
+    border_seed[:, -1] = nan_mask[:, -1]
+
+    # Expand border mask to include all connected NaN regions touching the edge
+    labeled, _ = label(nan_mask)
+    border_labels = set(labeled[border_seed & nan_mask])
+    border_mask = np.isin(labeled, list(border_labels))
+
+    # --- Prepare image for convolution ---
+    # Border NaNs -> 0 (fill, no interpolation)
+    # Internal NaNs -> kept as NaN (will be interpolated by convolve_fft)
+    img_to_conv = img_nan.copy()
+    img_to_conv[border_mask] = 0.0
+
+    # Convolve - interpolate handles internal NaNs correctly
+    convolved_img = convolve_fft(
+        img_to_conv,
+        kernel,
+        normalize_kernel = False,  # Kernel normalization is handled in the main wrapper
+        nan_treatment    = 'interpolate',
+        preserve_nan     = False, 
+        allow_huge       = True
+    )
+
+    if is_error:
+        # Convert variance back to standard deviation. 
+        # np.abs prevents math domain errors from tiny negative numerical artifacts.
+        convolved_img = np.sqrt(np.abs(convolved_img))
+
+    # --- Restore border zeros ---
+    # Expand border mask by kernel radius to mask pixels affected by the zero-fill
+    structure = np.ones((kernel_size, kernel_size))
+    expanded_border = binary_dilation(border_mask, structure=structure)
+    convolved_img[expanded_border] = 0.0
+
+    return convolved_img
+
+
+def convolve_irac(img_data, kernel, kernel_size, is_error=False):
+    """
+    Performs FFT-based convolution for Spitzer/IRAC images (S4G).
+    If is_error=True, treats input as sigma and propagates variance.
+    """
+    # Save original NaN mask before any modification
+    nan_mask_original = np.isnan(img_data)
+
+    if is_error:
+        # S4G error maps are provided as standard deviation (sigma).
+        # We square it to perform variance propagation.
+        data_to_conv = img_data**2
+    else:
+        data_to_conv = img_data.copy()
+
+    # Convolve with fill=0 to avoid interpolating across the NaN gap
+    convolved_img = convolve_fft(
+        data_to_conv,
+        kernel,
+        normalize_kernel = False,
+        nan_treatment    = 'fill',
+        fill_value       = 0.0,
+        preserve_nan     = False,
+        allow_huge       = True
+    )
+
+    if is_error:
+        # Convert variance back to standard deviation
+        convolved_img = np.sqrt(np.abs(convolved_img))
+
+    # Expand NaN mask to cover pixels affected by the gap boundary.
+    # Pixels within kernel_size/2 of the gap are potentially contaminated.
+    structure = np.ones((kernel_size, kernel_size))
+    expanded_nan_mask = binary_dilation(nan_mask_original, structure=structure)
+
+    # Restore NaNs in the expanded region
+    convolved_img[expanded_nan_mask] = np.nan
+
+    return convolved_img
+
+
+def diagnose_negatives(convolved_img, img_data, filt, survey):
+    """
+    Diagnoses the origin of negative pixels after convolution.
+    Helps determine if negatives are border artifacts or internal signal issues.
+    """
+    neg_mask = convolved_img < 0
+    n_neg = np.sum(neg_mask)
+    pct_neg = n_neg / convolved_img.size * 100
+    
+    print(f"\n--- Negative pixel diagnosis: {filt} ({survey}) ---")
+    print(f"Total negative pixels: {n_neg} ({pct_neg:.2f}%)")
+    print(f"Min value:  {np.nanmin(convolved_img):.6e}")
+    print(f"Max value:  {np.nanmax(convolved_img):.6e}")
+    print(f"Ratio min/max: {abs(np.nanmin(convolved_img))/np.nanmax(convolved_img):.4%}")
+    
+    # --- Check 1: Are negatives concentrated at the border? ---
+    ny, nx = convolved_img.shape
+    border_width = 50  # pixels
+    border_region = np.zeros_like(neg_mask, dtype=bool)
+    border_region[:border_width, :]  = True
+    border_region[-border_width:, :] = True
+    border_region[:, :border_width]  = True
+    border_region[:, -border_width:] = True
+    
+    neg_in_border   = np.sum(neg_mask & border_region)
+    neg_in_interior = np.sum(neg_mask & ~border_region)
+    
+    print(f"\nNegatives in border region:   {neg_in_border} ({neg_in_border/max(n_neg,1)*100:.1f}%)")
+    print(f"Negatives in interior region: {neg_in_interior} ({neg_in_interior/max(n_neg,1)*100:.1f}%)")
+    
+    # --- Check 2: Are negatives where input was zero/NaN? ---
+    if survey == 'phangs':
+        zero_mask = (img_data == 0)
+    else:
+        zero_mask = np.isnan(img_data)
+        
+    neg_at_invalid = np.sum(neg_mask & zero_mask)
+    neg_at_valid   = np.sum(neg_mask & ~zero_mask)
+    
+    print(f"\nNegatives at invalid input pixels (zero/NaN): {neg_at_invalid} ({neg_at_invalid/max(n_neg,1)*100:.1f}%)")
+    print(f"Negatives at valid input pixels:              {neg_at_valid} ({neg_at_valid/max(n_neg,1)*100:.1f}%)")
+    
+    # --- Check 3: Magnitude relative to noise ---
+    # Estimate background noise from valid pixels
+    if survey == 'phangs':
+        valid_data = convolved_img[img_data != 0]
+    else:
+        valid_data = convolved_img[~np.isnan(img_data)]
+        
+    noise = np.nanstd(valid_data[valid_data < np.nanpercentile(valid_data, 10)])
+    print(f"\nEstimated noise level: {noise:.6e}")
+    print(f"Negatives within 3-sigma of noise: {np.sum(convolved_img < -3*noise)}")
+    print(f"Negatives within 1-sigma of noise: {np.sum(convolved_img < -1*noise)}")
+    print(50*'-')
+
+
+def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False, error=False):
+    """
+    Applies a homogenization kernel to an image using FFT-based convolution.
+    Handles NaN and zero regions correctly for both PHANGS and IRAC images.
+    If error=True, propagates mathematical variance instead of simple flux convolution.
+    Saves the convolved image as a new FITS file.
     """
     output_dir = Path(output_dir).expanduser()
-    if not os.path.exists(output_dir): os.makedirs(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     with fits.open(kernel_fits) as hdu_k, fits.open(original_fits) as hdu_i:
         kernel_data = np.nan_to_num(hdu_k[0].data)
-        img_data = hdu_i[0].data
-        img_header = hdu_i[0].header
+        img_data    = hdu_i[0].data
+        img_header  = hdu_i[0].header
 
-    # Normalize kernel to preserve flux
-    if np.sum(kernel_data) != 0:
-        kernel_norm = kernel_data / np.sum(kernel_data)
-
-    original_file_name = original_fits.name
-    info = original_file_name.split('_')
+    # Validate kernel before convolution
+    if np.sum(kernel_data) == 0:
+        raise ValueError(f"Kernel {kernel_fits} has zero sum — invalid kernel!")
     
-    # Identify survey to apply specific NaN handling/naming
+    kernel_norm = kernel_data / np.sum(kernel_data)
+    
+    # Select the appropriate kernel format based on the error flag
+    kernel_to_use = kernel_norm**2 if error else kernel_norm
+    kernel_size = kernel_data.shape[0]
+
+    original_file_name = original_fits.name if hasattr(original_fits, 'name') else os.path.basename(original_fits)
+    info = original_file_name.split('_')
+
+    # Execute survey-specific convolution pipelines
     if 'phangs-hst' in info:
-        convolved_img = fftconvolve(img_data, kernel_norm, mode='same')
+        convolved_img = convolve_phangs(img_data, kernel_to_use, kernel_size, is_error=error)
         gal_name, survey, filt = info[4].lower(), 'phangs', info[5].lower()
         if 'mosaic' in gal_name:
             gal_name = gal_name.replace('mosaic', '')
+
     elif 's4g' in original_file_name:
-        # IRAC images often have NaNs that break FFT; convert to zero
-        img_data_limpa = np.nan_to_num(img_data, nan=0.0)
-        convolved_img = fftconvolve(img_data_limpa, kernel_norm, mode='same')
+        convolved_img = convolve_irac(img_data, kernel_to_use, kernel_size, is_error=error)
         gal_name, survey, filt = info[0].lower(), 's4g', info[2].lower()
-    
+
+    else:
+        raise ValueError(f"Unrecognized survey for file: {original_file_name}")
+
+    # --- Validate output ---
+    # Validation is silently skipped for error maps (since the square root removes negative values).
+    # Only warn if convolution significantly increased negative pixels.
+    # Pre-existing negatives from sky subtraction are physically valid.
+    if not error:
+        n_neg_before = np.sum(img_data < 0)
+        n_neg_after  = np.sum(convolved_img < 0)
+
+        if n_neg_after > n_neg_before * 1.5:
+            print(f"WARNING: Convolution increased negative pixels in {filt}!")
+            diagnose_negatives(convolved_img, img_data, filt, survey)
+
+    # --- Save convolved FITS ---
     convolved_fits = fits.PrimaryHDU(data=convolved_img, header=img_header)
-    print(100*'#' + f'\nConvolving {filt} filter from {survey} survey:')
+    print(100*'#' + f'\nConvolving {filt} filter from {survey} survey (Error Map: {error}):')
 
-    output_path = os.path.join(output_dir, gal_name)
-    if not os.path.exists(output_path): os.makedirs(output_path)
+    output_path = output_dir / gal_name
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    out_file = os.path.join(output_path, f'{gal_name}_{survey}_{filt}_convolved.fits')
+    suffix = '_convolved_error.fits' if error else '_convolved.fits'
+    out_file = output_path / f'{gal_name}_{survey}_{filt}{suffix}'
     convolved_fits.writeto(out_file, overwrite=True)
     print(f'Convolved FITS saved to: {out_file}\n' + 100*'#')
 
-    if GAL_NAME: return gal_name
-
+    if GAL_NAME:
+        return gal_name
