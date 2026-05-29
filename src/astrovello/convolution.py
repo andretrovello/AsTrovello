@@ -6,6 +6,8 @@ from astropy.convolution import convolve_fft
 from scipy.ndimage import label, binary_dilation
 from collections import defaultdict
 from pathlib import Path
+from astropy.nddata import block_reduce 
+
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Image convolution ------------------------------------------------------
 
@@ -176,7 +178,7 @@ def convolved_dict(path_phangs, path_s4g_reprojected, path_kernels, error = Fals
     else:
         phangs_files = list(path_phangs.glob('*exp-drc-sci.fits'))
         all_s4g_files = list(path_s4g_reprojected.glob('*.fits'))
-        s4g_files = [f for f in all_s4g_files if '_error' not in f]
+        s4g_files = [f for f in all_s4g_files if '_error' not in f.name]
         
     kernel_files = list(path_kernels.glob('*.fits'))
 
