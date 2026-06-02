@@ -42,10 +42,17 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
                 layer[layer < 0] = np.nan
                 cubo[i, :, :] = layer
     else:
-        mask_final = phangs_intersection_mask(ref_file)
-        # 2. Fill the cube layers, setting non-mask regions to NaN
-        for i, img_atual in enumerate(aligned_images):
-            cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
+            mask_final = phangs_intersection_mask(ref_file)
+            
+            # 2. Fill the cube layers, setting non-mask regions to NaN
+            for i, img_atual in enumerate(aligned_images):
+                # Cria a máscara combinada SÓ para esta iteração (usa o operador '&')
+                if mask_final is not None:
+                    layer_mask = mask_final & (img_atual >= 0)
+                else:
+                    layer_mask = (img_atual >= 0)
+                    
+                cubo[i, :, :] = np.where(layer_mask, img_atual, np.nan)
 
     # 3. Bounding Box Cutout: Shrink the cube to the relevant area plus padding
     y_off, x_off = 0, 0
