@@ -402,7 +402,7 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False,
             gal_name = gal_name.replace('mosaic', '')
 
     elif 's4g' in original_file_name:
-        convolved_img = convolve_irac(img_data, kernel_to_use, kernel_size, is_error=error)
+        convolved_img = convolve_irac(img_data, kernel_norm, kernel_size, is_error=error)
         gal_name, survey, filt = info[0].lower(), 's4g', info[2].lower()
 
     else:

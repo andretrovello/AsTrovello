@@ -256,10 +256,11 @@ def main():
 
         # Collect all processed Jy/pixel files
         if args.error:
-            file_list = list(loc.glob('*_error_Jy_per_pixel.fits'))
+            flags = ('error_Jy_per_pixel.fits')
         else:
-            file_list = list(loc.glob('*convolved_Jy_per_pixel.fits'))
-
+            flags = ('convolved_Jy_per_pixel.fits', 'master_Jy_per_pixel.fits')
+            
+        file_list = [f for f in loc.glob('*') if f.name.endswith(flags)]
         ref_file = list(phangs_imgs.glob('*f275w*sci.fits')) 
 
         if not file_list: 

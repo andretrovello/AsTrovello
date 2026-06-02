@@ -9,7 +9,7 @@ from astropy.io import fits
 # -------------------------------------------- Data Cube creation-------------------------------------------------------
 
 def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_filename, 
-                     aplicar_mask=True, N_SIGMA=3, padding=50):
+                     aplicar_mask=True, N_SIGMA=3, padding=50, is_error = False):
     """
     Constructs a 3D FITS Hypercube (RA, DEC, Filter).
     Includes automatic sky masking, background subtraction, and Bounding Box cutout.
