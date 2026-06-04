@@ -2,7 +2,7 @@ import numpy as np
 from .mask import soma_img, mask, phangs_intersection_mask
 from astropy.wcs import WCS
 from astropy.io import fits
-
+from scipy.ndimage import center_of_mass
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -86,3 +86,86 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
         
     fits.writeto(output_filename, cubo, header=cube_header, overwrite=True)
     return cubo, cube_header
+
+def create_cutout(data, header, output_filename):
+
+    # 1. Determina as dimensões e o centro de massa uma única vez
+    ref_img = data[0, :, :] 
+    ny, nx = ref_img.shape
+
+    center_y, center_x = center_of_mass(np.nan_to_num(ref_img))
+    center_y, center_x = int(center_y), int(center_x)
+    print(f"Image center of mass: y={center_y}, x={center_x}")
+
+    # 2. OTIMIZAÇÃO 1: Cria a grade 2D de distâncias uma ÚNICA vez para a imagem inteica
+    y_grid, x_grid = np.indices((ny, nx))
+    dist_map = np.sqrt((y_grid - center_y)**2 + (x_grid - center_x)**2)
+
+    # 3. OTIMIZAÇÃO 2: Procura pixels inválidos em todo o cubo de uma vez só (sem loops!)
+    # data <= 0 ou np.isnan(data) gera uma matriz 3D booleana. 
+    # O .any(axis=0) colapsa o cubo: se o pixel for inválido em QUALQUER filtro, vira True.
+    invalid_mask = (data <= 0) | np.isnan(data)
+    invalid_pixels_map = invalid_mask.any(axis=0)
+
+    # 4. Determina o Raio Crítico instantaneamente
+    if not np.any(invalid_pixels_map):
+        print("Whole cube has valid pixels. No cuts needed.")
+        radius_mask = np.ones((ny, nx), dtype=bool)
+    else:
+        # O truque de mestre: pegamos o mapa de distâncias e filtramos apenas as posições inválidas
+        # O np.min() extrai o menor raio diretamente, sem passar por loops ou funções externas
+        radius = np.min(dist_map[invalid_pixels_map])
+        print(f"Maximum safety radius: {radius:.2f} pixels.")
+        
+        # Cria a máscara circular perfeita
+        radius_mask = dist_map <= radius
+
+    # 5. Aplica a máscara no cubo inteiro (em todas as dimensões de uma vez só!)
+    # O np.where aplica a máscara 2D ao longo de todo o array 3D 'data' de forma vetorizada
+    cube_clean = np.where(radius_mask[np.newaxis, :, :], data, np.nan)
+
+    # ... (código anterior que gerou o cube_clean) ...
+
+    # 6. Definindo os limites do Bounding Box tangente ao círculo válido
+    # O int() garante que o índice seja inteiro para o recorte da matriz
+    # O max() e min() garantem que o recorte nunca tente pedir um pixel fora da imagem original
+    y_min = max(0, int(center_y - radius))
+    y_max = min(ny, int(center_y + radius) + 1)  # +1 para o slice do Python incluir a borda
+
+    x_min = max(0, int(center_x - radius))
+    x_max = min(nx, int(center_x + radius) + 1)
+
+    print(f"Cutting hypercube... Bounding Box: y[{y_min}:{y_max}], x[{x_min}:{x_max}]")
+
+    # 7. O Recorte Final Volumétrico
+    # Fatiamos os eixos Y e X, mantendo todos os filtros (eixo 0) intocados
+    cube_cropped = cube_clean[:, y_min:y_max, x_min:x_max]
+    dim, ny_new, nx_new = cube_cropped.shape
+
+    print(f"Original cube size : {ny}x{nx} pixels")
+    print(f"Cutout cube size: {ny_new}x{nx_new} pixels")
+
+    # ---------------------------------------------------------
+    # 8. O Conserto da Astrometria (WCS Header)
+    # ---------------------------------------------------------
+    print('Adjusting WCS to new cut...')
+    
+    # Cria uma cópia independente para não corromper o header original na memória
+    cube_header_cropped = header.copy()
+
+    # Aplica a translação no pixel de referência
+    if 'CRPIX1' in cube_header_cropped and 'CRPIX2' in cube_header_cropped:
+        cube_header_cropped['CRPIX1'] -= x_min
+        cube_header_cropped['CRPIX2'] -= y_min
+        
+    # Atualiza as dimensões físicas da matriz no cabeçalho (NAXIS)
+    cube_header_cropped['NAXIS1'] = nx_new  # Largura (Eixo X)
+    cube_header_cropped['NAXIS2'] = ny_new # Altura (Eixo Y)
+    cube_header_cropped['NAXIS3'] = dim # Profundidade (Filtros)
+    
+    # (Opcional) Adiciona um comentário no arquivo para rastreabilidade
+    cube_header_cropped.add_history(f"BBox cutout applied: X_offset={x_min}, Y_offset={y_min}")
+
+    output_filename_new = output_filename.parent /  output_filename.name.replace(f'{nx}x{ny}', f'{nx_new}x{ny_new}')
+    fits.writeto(output_filename_new, cube_cropped, header=cube_header_cropped, overwrite=True)
+    print(f"Cut cube saved successfully: {output_filename_new}")

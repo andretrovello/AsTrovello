@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--apply_mask', action='store_true', help='If set, generates a signal-based sky mask for the final cube')
     parser.add_argument('--sigma', type = float, default = 1.0, help = 'Sigma threshold for sky mask cutting')
     parser.add_argument('--error', action='store_true', help='If set, creates error cube')
+    parser.add_argument('--valid_pixels_cut', action='store_true', help='If set, cuts image only in a central radius where flux > 0 and not NaN')
 
     args = parser.parse_args()
 
@@ -298,6 +299,16 @@ def main():
             # Memory cleanup
             del aligned_images
             gc.collect()
+
+        if args.valid_pixels_cut:
+            print('Cutting cube in valid pixels radius...')
+
+            with fits.open(final_name) as hdu:
+                cube_data = hdu[0].data
+                cube_header = hdu[0].header
+
+            aat.create_cutout(cube_data, cube_header, final_name)
+
 
 if __name__ == "__main__":
     main()
