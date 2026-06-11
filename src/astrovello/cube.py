@@ -3,21 +3,65 @@ from .mask import soma_img, mask, phangs_intersection_mask
 from astropy.wcs import WCS
 from astropy.io import fits
 from scipy.ndimage import center_of_mass
+from astropy.stats import sigma_clipped_stats
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Data Cube creation-------------------------------------------------------
 
+def sky_level(plane):
+    v = plane[np.isfinite(plane)]      # 2. drop NaNs
+    v = v[v != 0.0]                    # 3. drop exact-zero padding
+    _, sclip_median, sclip_std = sigma_clipped_stats(v, sigma=3.0, maxiters=5)  # 4.
+    return dict(valid_pixels = v.size,
+                sclip_median = float(sclip_median),
+                pct_neg = 100.0 * np.mean(v < 0))
+
 def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_filename, 
-                     aplicar_mask=True, N_SIGMA=3, padding=50, is_error = False):
+                     aplicar_mask=True, N_SIGMA=3, padding=50, is_error = False, sky_subtraction = True):
     """
     Constructs a 3D FITS Hypercube (RA, DEC, Filter).
     Includes automatic sky masking, background subtraction, and Bounding Box cutout.
     Updates WCS to 3D.
     """
-    print(f'\nInitiating hypercube creation (N_SIGMA={N_SIGMA})...')
+    print('\nInitiating hypercube creation...')
     ny, nx = aligned_images[0].shape
     cubo = np.empty((len(filter_names), ny, nx), dtype=np.float32)
+
+    print('Determinig intersecting area between surveys...')
+    inter_mask = phangs_intersection_mask(ref_file)
+
+    if (sky_subtraction) and (not is_error):
+        sub_aligned_images = []
+
+        print('Performing sky subtraction...\n')
+        print(154*'-')
+        print(f"{'filter':6s} | {'valid_pixels_original':>22s} | {'sky_level_original':>23s} | {'%neg_original':>14s} | "
+        f"{'valid_pixels_subtracted':>26s} | {'sky_level_subtracted':>27s} | {'%neg_subtracted':>18s} ")
+        print(154*'-')
+
+        for i, img in enumerate(aligned_images):
+            band = filter_names[i]
+
+            if inter_mask is not None:
+                valid_pixels_mask = inter_mask & np.isfinite(img) & (img != 0)
+            else:
+                valid_pixels_mask = np.isfinite(img) & (img != 0)
+            regular_dict = sky_level(img[valid_pixels_mask])
+
+            img_sub = np.where(valid_pixels_mask, img - regular_dict['sclip_median'], np.nan)
+            subtracted_dict = sky_level(img_sub)
+            sub_aligned_images.append(img_sub)
+
+            print(f"{band:6s} | {regular_dict['valid_pixels']:>22d} | {regular_dict['sclip_median']:>+23.2e} | "
+            f"{regular_dict['pct_neg']:>14.2f} | {subtracted_dict['valid_pixels']:>26d} | {subtracted_dict['sclip_median']:>+27.2e} | "
+            f"{subtracted_dict['pct_neg']:>18.2f}")
+            del(img)
+            
+        print(154*'-')
+        aligned_images = sub_aligned_images
+
+        print('\nSubtraction executed. Building datacube...')
     
     # 1. Determine final processing mask (Signal-based or Border-based)
     if aplicar_mask:
@@ -34,25 +78,15 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
 
             else:
                 # Science cube: subtract sky background before masking
-                sky = np.nanmedian(img_atual[~mask_final])
-                layer = np.where(mask_final, img_atual - sky, np.nan) if mask_final is not None else img_atual
-
-                # Set residual negatives to NaN after sky subtraction
-                # These are unphysical pixels below the noise floor
-                layer[layer < 0] = np.nan
-                cubo[i, :, :] = layer
+                cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
     else:
-            mask_final = phangs_intersection_mask(ref_file)
-            
-            # 2. Fill the cube layers, setting non-mask regions to NaN
-            for i, img_atual in enumerate(aligned_images):
-                # Cria a máscara combinada SÓ para esta iteração (usa o operador '&')
-                if mask_final is not None:
-                    layer_mask = mask_final & (img_atual >= 0)
-                else:
-                    layer_mask = (img_atual >= 0)
-                    
-                cubo[i, :, :] = np.where(layer_mask, img_atual, np.nan)
+        mask_final = inter_mask 
+
+    for i, img_atual in enumerate(aligned_images):
+        if mask_final is not None:
+            cubo[i, :, :] = np.where(mask_final, img_atual, np.nan)
+        else:
+            cubo[i, :, :] = img_atual
 
     # 3. Bounding Box Cutout: Shrink the cube to the relevant area plus padding
     y_off, x_off = 0, 0

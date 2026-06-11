@@ -20,7 +20,8 @@ from .mask import (
 
 from .cube import (
     create_data_cube,
-    create_cutout
+    create_cutout,
+    sky_level
 )
 
 from .utils import (
