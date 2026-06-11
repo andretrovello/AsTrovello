@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--create_kernel', action='store_true', help='If set, triggers PSF cleaning and PyPHER kernel generation')
     parser.add_argument('--apply_mask', action='store_true', help='If set, generates a signal-based sky mask for the final cube')
     parser.add_argument('--sigma', type = float, default = 1.0, help = 'Sigma threshold for sky mask cutting')
+    parser.add_argument('--error', action='store_true', help='If set, creates error cube')
+    parser.add_argument('--valid_pixels_cut', action='store_true', help='If set, cuts image only in a central radius where flux > 0 and not NaN')
 
     args = parser.parse_args()
 
@@ -37,8 +39,8 @@ def main():
     # Define Input hierarchy (PHANGS/HST and S4G/Spitzer)
     input_dir = BASE_DIR / 'Input'
     if not input_dir.exists():
-        print(f"❌ Erro: Pasta 'Input' não encontrada em {BASE_DIR}")
-        print("Certifique-se de estar na pasta correta do seu projeto.")
+        print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
+        print("Make sure you are in the correct directory.")
         return 
     phangs_dir = input_dir / "PHANGS" 
     phangs_imgs = phangs_dir / 'galaxies' / "phangs_hst" / args.galaxy.lower()
@@ -59,16 +61,28 @@ def main():
     if args.mode == 'full' or args.mode == 'alignment_only':
         print('Starting image reprojection and alignment...\n')
 
-        # List PHANGS (Reference) and S4G (To be reprojected) files
-        sci_files_phangs = list(phangs_imgs.glob('*exp-drc-sci.fits'))
-        sci_files_s4g = list(s4g_imgs.glob('*.fits'))
+        if args.error: 
+            # List PHANGS (Reference) and S4G (To be reprojected) files
+            err_files_phangs = list(phangs_imgs.glob('*err-drc-wht.fits'))
+            err_files_s4g = list(s4g_imgs.glob('*sigma2014.fits'))
+            # Use the first HST image as the master grid reference
+            phangs_ref_file = err_files_phangs[0]
 
-        # Use the first HST image as the master grid reference
-        phangs_ref_file = sci_files_phangs[0]
+            for file in err_files_s4g:
+                # Match Spitzer resolution/grid to HST grid
+                aat.S4G2PHANGS_reproject(file, phangs_ref_file, output_path = reprojected_path, error = True)
+        
+        else:
+            # List PHANGS (Reference) and S4G (To be reprojected) files
+            sci_files_phangs = list(phangs_imgs.glob('*exp-drc-sci.fits'))
+            sci_files_s4g = list(s4g_imgs.glob('*phot*.fits'))
 
-        for file in sci_files_s4g:
-            # Match Spitzer resolution/grid to HST grid
-            aat.S4G2PHANGS_reproject(file, phangs_ref_file, output_path = reprojected_path)
+            # Use the first HST image as the master grid reference
+            phangs_ref_file = sci_files_phangs[0]
+
+            for file in sci_files_s4g:
+                # Match Spitzer resolution/grid to HST grid
+                aat.S4G2PHANGS_reproject(file, phangs_ref_file, output_path = reprojected_path)
 
 # --------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------ Image convolution --------------------------------------------------
@@ -89,7 +103,7 @@ def main():
 
             # The Master PSF is the one with the largest FWHM (coarsest resolution)
             psf_master_name = df_fwhm.iloc[-1]['Filtro']
-            print(f"\n⭐ Recommended PSF (master): {psf_master_name}")
+            print(f"\n==> Recommended PSF (master): {psf_master_name}")
             
             # --- PSF STANDARDIZATION ---
             survey_data = {
@@ -140,29 +154,71 @@ def main():
         # --- IMAGE CONVOLUTION ---
         convolved_fits_path_gal = convolved_fits_path / args.galaxy
         if os.path.exists(convolved_fits_path_gal):
-            shutil.rmtree(convolved_fits_path_gal)
+            print('\nConvolution directory already exists!')
+        else:
+            print('\nCreating convolution directory...')
+            os.makedirs(convolved_fits_path_gal, exist_ok=True)
         
-        # Pair images with their specific kernels
-        fftconvolve_dict = aat.convolved_dict(path_phangs = phangs_imgs, \
-            path_s4g_reprojected = reprojected_path / args.galaxy, path_kernels = kernel_dir)
+        if args.error:
+            # Pair images with their specific kernels
+            fftconvolve_dict = aat.convolved_dict(path_phangs = phangs_imgs, \
+                path_s4g_reprojected = reprojected_path / args.galaxy, path_kernels = kernel_dir, error = True)
 
-        for k in fftconvolve_dict.keys():
-            original_fits = fftconvolve_dict[k]['img']['path']
-            kernel_fits = fftconvolve_dict[k]['kernel']['path']
-            # Run the convolution (FFT based)
-            galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True)
+            for k in fftconvolve_dict.keys():
+                original_fits = fftconvolve_dict[k]['err_img']['path']
+                kernel_fits = fftconvolve_dict[k]['kernel']['path']
 
-        # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
-        master_source_dir = reprojected_path / galaxy_name
-        master_source_name = f'{galaxy_name}_s4g_{psf_master_name}_on_phangs_projection.fits'
-        master_source_path = master_source_dir / master_source_name
-        master_dest_path = convolved_fits_path / args.galaxy / f'{galaxy_name}_s4g_irac2_master.fits'
+                # Run the convolution (FFT based)
+                galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True, error = True)
 
-        os.makedirs(convolved_fits_path, exist_ok=True)
-        shutil.copy2(master_source_path, master_dest_path)
+            # Handle the Master image (it doesn't need convolution, but it error map needs to be converted to sigma in all cases)
+            master_source_dir = reprojected_path / galaxy_name
+            master_source_name = f'{galaxy_name}_s4g_{psf_master_name}_on_phangs_projection_error.fits'
+            master_source_path = master_source_dir / master_source_name
+            master_dest_path = convolved_fits_path / args.galaxy / f'{galaxy_name}_s4g_irac2_master_error.fits'
 
-        print(100 * '#')
-        print(f'Master file {psf_master_name} from s4g survey:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
+            with fits.open(master_source_path) as hdu:
+                master_data = hdu[0].data
+                master_header = hdu[0].header
+
+            if 'irac' in psf_master_name:
+                # S4G error maps are already in sigma. Keep it to match convolved outputs.
+                master_data_final = master_data.copy()
+                master_header['COMMENT'] = 'Error map kept as standard deviation (sigma)'
+            else:
+                # PHANGS (1/sigma^2), convert to variance and take the square root
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    variance = np.where(master_data > 0, 1.0 / master_data, 0.0)
+                master_data_final = np.sqrt(variance)
+                master_header['COMMENT'] = 'Weight map converted to standard deviation (sigma)'
+                
+            hdu = fits.PrimaryHDU(data = master_data_final, header = master_header)
+            hdu.writeto(master_dest_path, overwrite=True)
+
+            print(100 * '#')
+            print(f'Master error file {psf_master_name} mapped:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
+
+        else:
+            # Pair images with their specific kernels
+            fftconvolve_dict = aat.convolved_dict(path_phangs = phangs_imgs, \
+                path_s4g_reprojected = reprojected_path / args.galaxy, path_kernels = kernel_dir)
+
+            for k in fftconvolve_dict.keys():
+                original_fits = fftconvolve_dict[k]['img']['path']
+                kernel_fits = fftconvolve_dict[k]['kernel']['path']
+                # Run the convolution (FFT based)
+                galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True)
+
+            # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
+            master_source_dir = reprojected_path / galaxy_name
+            master_source_name = f'{galaxy_name}_s4g_{psf_master_name}_on_phangs_projection.fits'
+            master_source_path = master_source_dir / master_source_name
+            master_dest_path = convolved_fits_path / args.galaxy / f'{galaxy_name}_s4g_irac2_master.fits'
+
+            shutil.copy2(master_source_path, master_dest_path)
+
+            print(100 * '#')
+            print(f'Master file {psf_master_name} from s4g survey:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
 
 # -------------------------------------------------------------------------------------------------------------------------
 # ----------------------------------------------- FITS unit conversion-----------------------------------------------------
@@ -171,7 +227,13 @@ def main():
         convolved_fits_path_gal = convolved_fits_path / args.galaxy
         conv_files = list(convolved_fits_path_gal.glob('*.fits'))
 
-        for file in conv_files:
+        if args.error:
+            conv_files_list = [f for f in conv_files if f.name.endswith(('_master_error.fits', '_convolved_error.fits'))]
+
+        else:
+            conv_files_list = [f for f in conv_files if f.name.endswith(('_master.fits', '_convolved.fits'))]
+
+        for file in conv_files_list:
             filter_name = file.name.split('_')[-2]
             print(f'Converting {filter_name} image units to Jy/pixel:')
             # Perform astronomical unit conversion (e/s or MJy/sr -> Jy/pix)
@@ -194,7 +256,12 @@ def main():
         os.makedirs(output_dir_cube, exist_ok=True)
 
         # Collect all processed Jy/pixel files
-        file_list = list(loc.glob('*_Jy_per_pixel.fits'))
+        if args.error:
+            flags = ('error_Jy_per_pixel.fits')
+        else:
+            flags = ('convolved_Jy_per_pixel.fits', 'master_Jy_per_pixel.fits')
+            
+        file_list = [f for f in loc.glob('*') if f.name.endswith(flags)]
         ref_file = list(phangs_imgs.glob('*f275w*sci.fits')) 
 
         if not file_list: 
@@ -221,20 +288,27 @@ def main():
             # --- DYNAMIC RENAMING ---
             # Rename based on actual pixel dimensions after BBox cutout
             _, final_ny, final_nx = cube.shape
-            final_name = output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_Jy_per_pixel.fits'
+            if args.error:
+                kind = 'err'
+            else:
+                kind = 'sci'
+            final_name = output_dir_cube / f'{args.galaxy}_datacube_{kind}_{final_nx}x{final_ny}_Jy_per_pixel.fits'
             temp_name.rename(final_name)
             print(f"==> Cube created: {final_name.name}")
 
             # Memory cleanup
             del aligned_images
             gc.collect()
-            
-            # --- AUTOMATED ZOOM (Cutout) ---
-            # Create a 300x300 pixel zoom centered on the reference coordinate (CRPIX)
-            cx, cy = int(cube_header['CRPIX1']), int(cube_header['CRPIX2'])
-            regions = [(output_dir_cube / f'{args.galaxy}_datacube_sci_{final_nx}x{final_ny}_zoomed.fits', 
-                        cx-150, cx+150, cy-150, cy+150)]
-            aat.create_cutouts(cube, cube_header, regions)
+
+        if args.valid_pixels_cut:
+            print('Cutting cube in valid pixels radius...')
+
+            with fits.open(final_name) as hdu:
+                cube_data = hdu[0].data
+                cube_header = hdu[0].header
+
+            aat.create_cutout(cube_data, cube_header, final_name)
+
 
 if __name__ == "__main__":
     main()

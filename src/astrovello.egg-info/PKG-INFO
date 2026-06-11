@@ -2,9 +2,11 @@ Metadata-Version: 2.4
 Name: astrovello
 Version: 0.1.2
 Summary: A framework for galaxy morphology and non-parametric decomposition.
-Author-email: André Almeida Trovello <seu-email@usp.br>
+Author-email: André Almeida Trovello <andretrovello@usp.br>
+License: MIT
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: numpy>=2.0
 Requires-Dist: astropy>=6.0
 Requires-Dist: scipy>=1.10
@@ -23,12 +25,14 @@ Requires-Dist: rasterio
 Requires-Dist: shapely
 Requires-Dist: dask
 Requires-Dist: zarr
+Dynamic: license-file
 
 <p align="center">
   <img src="AsTrovello_logo.png" alt="AsTrovello Logo" width="300">
 </p>
 
 ## AsTrovello
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 **AsTrovello** is a Python library for multi-wavelength galaxy data analysis. It integrates high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**, providing tools for image alignment, PSF homogenization, unit conversion, and 3D hypercube creation.
 
@@ -107,17 +111,17 @@ The command must be executed inside the same directory where galaxy data and sur
 ```text
 BASE_DIRECTORY/
 ├── Input/
-│   ├── PHANGS/             # HST images and PSF models
-│   |    ├── galaxies/
-|   |    |    ├── galaxies/
-|   |    |        ├── phangs_hst/
-|   |    |            ├── ngc.../
-|   |    ├── PSF/
-│   └── S4G/                # Spitzer/IRAC images and PSFs
-│        ├── galaxies/
-|        |    ├── galaxies/
-|        |        ├── ngc.../
-|        ├── PSF/
+   ├── PHANGS/             # HST images and PSF models
+   |    ├── galaxies/
+   |    |    ├── galaxies/
+   |    |        ├── phangs_hst/
+   |    |            ├── ngc.../
+   |    ├── PSF/
+   └── S4G/                # Spitzer/IRAC images and PSFs
+        ├── galaxies/
+        |    ├── galaxies/
+        |        ├── ngc.../
+        ├── PSF/
 ```
 
 
@@ -128,7 +132,7 @@ Here are the most common ways to run the **AsTrovello** pipeline:
 #### 1. Full Processing (Standard)
 Runs everything from alignment to the final hypercube. Ideal for a first-time run on a new galaxy.
 ```bash
-python Codes/AsTrovello_run.py --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
+astrovello --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
 ```
 
 ## Quick Start
@@ -160,10 +164,9 @@ AsTrovello/
 │       ├── units.py         # Flux unit conversion to Jy/pixel
 │       ├── masking.py       # Sky background subtraction and signal masking
 │       ├── cube.py          # 3D FITS hypercube creation and cutouts
-│       └── utils.py         # Utility functions
-├── examples/
-│   ├── AsTrovello_run.py    # Main execution script
-│   └── galaxy_loop.py       # Batch processing for multiple galaxies
+│       ├── utils.py         # Utility functions
+│       ├── astrovello_cli.py    # Main execution script
+│       └── batch_runner.py       # Batch processing for multiple galaxies
 ├── pyproject.toml
 └── README.md
 ```
@@ -184,7 +187,7 @@ AsTrovello/
 ### units
 `convert2Jansky(fits_file)` — Converts HST (`ELECTRONS/S`) and Spitzer (`MJy/sr`) images to `Jy/pixel`.
 
-### masking
+### mask
 `mask(data, N_SIGMA=3)` — Sky subtraction and signal mask generation using MAD-based sigma clipping.
 
 ### cube
@@ -203,6 +206,3 @@ Full list available in `pyproject.toml`.
 
 ---
 
-## License
-
-MIT License. See `LICENSE` for details.

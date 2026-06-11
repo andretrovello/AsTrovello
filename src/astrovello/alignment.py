@@ -7,7 +7,7 @@ from reproject import reproject_interp
 # --------------------------------------------- Image alignment -------------------------------------------------------
 
 # Reproject S4G (Spitzer) images onto the PHANGS (HST) pixel grid
-def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
+def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path, error = False):
     """
     Aligns a Spitzer/IRAC image to the HST pixel grid.
     Returns an array with the same spatial dimensions as the PHANGS reference.
@@ -15,9 +15,14 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
     hdu_phangs = fits.open(phangs_ref_file_path)[0]
     hdu_s4g = fits.open(s4g_file_path)[0]
 
-    sci_file_s4g = s4g_file_path.name
-    # Extract galaxy name and filter index (e.g., IRAC1) from filename
-    galaxy_name, filter_mode = sci_file_s4g.split('.')[0].lower(), sci_file_s4g.split('.')[-2]
+    if error:
+        err_file_s4g = s4g_file_path.name
+        # Extract galaxy name and filter index (e.g., IRAC1) from filename
+        galaxy_name = err_file_s4g.split('_')[0].lower()
+    else:
+        sci_file_s4g = s4g_file_path.name
+        # Extract galaxy name and filter index (e.g., IRAC1) from filename
+        galaxy_name, filter_mode = sci_file_s4g.split('.')[0].lower(), sci_file_s4g.split('.')[-2]
 
     # Initialize WCS (World Coordinate System) for both images
     w_phangs = WCS(hdu_phangs.header)
@@ -29,7 +34,7 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
 
     # Perform the interpolation/reprojection using reproject_interp
     # Surface brightness is preserved, but flux per pixel is not strictly conserved due to resampling
-    array, footprint = reproject_interp((hdu_s4g.data, w_s4g), w_phangs, shape_out=hdu_phangs.data.shape)
+    array, _ = reproject_interp((hdu_s4g.data, w_s4g), w_phangs, shape_out=hdu_phangs.data.shape)
 
     s4g_new_header = hdu_s4g.header.copy()
 
@@ -57,8 +62,20 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path):
     output_directory = os.path.join(output_path, galaxy_name)
     if not os.path.exists(output_directory):
         os.makedirs(output_directory, exist_ok=True)
-        print(f"📁 Directory created: {output_directory}")
+        print(f"==> Directory created: {output_directory}")
 
-    output_name = f'{galaxy_name}_s4g_irac{filter_mode}_on_phangs_projection.fits'
-    fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
-    print('\n' + 100*'#' + f'\nReprojected FITS file: {output_name}\n' + 100*'#')
+    if error:
+        # sigma file applies to both IRAC channels — save same array for both
+        for channel, output_name in [
+            ('irac1', f'{galaxy_name}_s4g_irac1_on_phangs_projection_error.fits'),
+            ('irac2', f'{galaxy_name}_s4g_irac2_on_phangs_projection_error.fits')
+        ]:
+            fits.writeto(os.path.join(output_directory, output_name),
+                        array, s4g_new_header, overwrite=True)
+            print(f'Reprojected error FITS: {output_name}')
+
+        s4g_new_header['COMMENT'] = 'Same sigma map applied to both IRAC1 and IRAC2 channels'
+    else:
+        output_name = f'{galaxy_name}_s4g_irac{filter_mode}_on_phangs_projection.fits'
+        fits.writeto(os.path.join(output_directory, output_name), array, s4g_new_header, overwrite=True)
+        print('\n' + 100*'#' + f'\nReprojected FITS file: {output_name}\n' + 100*'#')

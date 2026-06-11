@@ -1,7 +1,7 @@
 from astropy.io import fits
 from tqdm import tqdm
 import numpy as np
-
+from astropy.stats import sigma_clipped_stats
 
 # ----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------------------- Mask ----------------------------------------------------------
@@ -43,3 +43,19 @@ def mask(data, N_SIGMA=3):
     if sigma_bg > 0: data_subtraida[data_subtraida < 0] = 0
     
     return data_subtraida, mask_res
+
+def mask_after_sky_sub(data, N_SIGMA=3):
+    """
+    Máscara unilateral de objetos (galáxia) após subtração de céu.
+    Estima o ruído do fundo com sigma clipping (mesmo critério usado
+    na determinação do nível do céu) e seleciona pixels > N_SIGMA * ruído.
+    """
+    valid = data[np.isfinite(data) & (data != 0)]
+    if valid.size == 0:
+        return np.zeros_like(data, dtype=bool)
+
+    # sigma clipping igual ao do céu: 3 sigma, 5 iterações
+    _, _, sky_std = sigma_clipped_stats(valid, sigma=3.0, maxiters=5)
+
+    # Corte unilateral: só o que está acima do ruído
+    return data > N_SIGMA * sky_std

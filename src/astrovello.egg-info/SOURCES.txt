@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/astrovello/__init__.py
