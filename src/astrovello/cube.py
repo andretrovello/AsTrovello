@@ -1,5 +1,5 @@
 import numpy as np
-from .mask import soma_img, mask, phangs_intersection_mask
+from .mask import soma_img, mask_after_sky_sub, phangs_intersection_mask
 from astropy.wcs import WCS
 from astropy.io import fits
 from scipy.ndimage import center_of_mass
@@ -28,7 +28,7 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
     ny, nx = aligned_images[0].shape
     cubo = np.empty((len(filter_names), ny, nx), dtype=np.float32)
 
-    print('Determinig intersecting area between surveys...')
+    print('Determining intersecting area between surveys...')
     inter_mask = phangs_intersection_mask(ref_file)
 
     if (sky_subtraction) and (not is_error):
@@ -64,29 +64,16 @@ def create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_
         print('\nSubtraction executed. Building datacube...')
     
     # 1. Determine final processing mask (Signal-based or Border-based)
-    if aplicar_mask:
+    if (aplicar_mask) and (not is_error):
         summed = soma_img(aligned_images, ref_file)
-        _, mask_final = mask(summed, N_SIGMA=N_SIGMA)
+        mask_final = mask_after_sky_sub(summed, N_SIGMA=N_SIGMA)
 
-        # 2. Fill the cube layers, setting non-mask regions to NaN
-        for i, img_atual in enumerate(aligned_images):
-
-            if is_error:
-                # Error cube: apply mask only, no sky subtraction
-                # Errors represent uncertainty — there is no physical background to remove
-                cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
-
-            else:
-                # Science cube: subtract sky background before masking
-                cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) if mask_final is not None else img_atual
     else:
         mask_final = inter_mask 
 
     for i, img_atual in enumerate(aligned_images):
-        if mask_final is not None:
-            cubo[i, :, :] = np.where(mask_final, img_atual, np.nan)
-        else:
-            cubo[i, :, :] = img_atual
+        cubo[i, :, :] = np.where(mask_final, img_atual, np.nan) 
+
 
     # 3. Bounding Box Cutout: Shrink the cube to the relevant area plus padding
     y_off, x_off = 0, 0

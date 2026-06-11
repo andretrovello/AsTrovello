@@ -16,6 +16,7 @@ from .mask import (
     phangs_intersection_mask,
     soma_img,
     mask,
+    mask_after_sky_sub
 )
 
 from .cube import (
