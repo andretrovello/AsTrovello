@@ -12,7 +12,7 @@ from astropy.stats import sigma_clipped_stats
 def sky_level(plane):
     v = plane[np.isfinite(plane)]      # 2. drop NaNs
     v = v[v != 0.0]                    # 3. drop exact-zero padding
-    _, sclip_median, sclip_std = sigma_clipped_stats(v, sigma=3.0, maxiters=5)  # 4.
+    _, sclip_median, _ = sigma_clipped_stats(v, sigma=3.0, maxiters=5)  # 4.
     return dict(valid_pixels = v.size,
                 sclip_median = float(sclip_median),
                 pct_neg = 100.0 * np.mean(v < 0))

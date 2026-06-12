@@ -55,7 +55,7 @@ def mask_after_sky_sub(data, N_SIGMA=3):
         return np.zeros_like(data, dtype=bool)
 
     # sigma clipping igual ao do céu: 3 sigma, 5 iterações
-    _, _, sky_std = sigma_clipped_stats(valid, sigma=3.0, maxiters=5)
-
+    _, sky_median, sky_std = sigma_clipped_stats(valid, sigma=3.0, maxiters=5)
+    threshold = sky_median + (N_SIGMA * sky_std)
     # Corte unilateral: só o que está acima do ruído
-    return data > N_SIGMA * sky_std
+    return data > threshold
