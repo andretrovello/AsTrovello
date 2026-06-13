@@ -429,6 +429,21 @@ def create_convolvedFITS(original_fits, kernel_fits, output_dir, GAL_NAME=False,
 
     suffix = '_convolved_error.fits' if error else '_convolved.fits'
     out_file = output_path / f'{gal_name}_{survey}_{filt}{suffix}'
+
+    # Copy photometric keywords from science convolved file to apply later 
+    # in error cube unit conversion (see units.py)
+    if error and survey == 'phangs':
+        sci_suffix = '_convolved.fits'
+        sci_file = output_path / f'{gal_name}_{survey}_{filt}{sci_suffix}'
+        if sci_file.exists():
+            with fits.open(sci_file) as sci_hdu:
+                for key in ['PHOTFNU', 'PHOTFLAM', 'PHOTPLAM', 'PHOTBW']:
+                    if key in sci_hdu[0].header:
+                        convolved_fits.header[key] = sci_hdu[0].header[key]
+            print(f"   ==> Copied photometric keywords from {sci_file.name}")
+        else:
+            print(f"   ==> WARNING: {sci_file.name} not found; photometric keywords will be missing.")
+
     convolved_fits.writeto(out_file, overwrite=True)
     print(f'Convolved FITS saved to: {out_file}\n' + 100*'#')
 

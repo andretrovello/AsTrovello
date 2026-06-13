@@ -250,6 +250,7 @@ def main():
         # Hypercube configuration parameters
         VALOR_N_SIGMA = args.sigma 
         APLICAR_MASCARA = args.apply_mask
+        ERROR = args.error
 
         output_dir_cube = output_dir / 'datacubes' / args.galaxy
         loc = convolved_fits_path / args.galaxy
@@ -282,7 +283,8 @@ def main():
             temp_name = output_dir_cube / 'temp_cube.fits'
             cube, cube_header = aat.create_data_cube(
                 aligned_images, filter_names, ref_file, ref_header, 
-                temp_name, aplicar_mask=APLICAR_MASCARA, N_SIGMA=VALOR_N_SIGMA
+                temp_name, aplicar_mask=APLICAR_MASCARA, N_SIGMA=VALOR_N_SIGMA,
+                is_error = ERROR
             )
 
             # --- DYNAMIC RENAMING ---
