@@ -13,7 +13,7 @@ def phangs_intersection_mask(ref_file):
     ref_data = fits.getdata(ref_file[0], ext=0)
     return (ref_data != 0) 
 
-def soma_img(aligned_images, ref_file):
+def sum_images(aligned_images, ref_file):
     """Integrates all images into a single 2D plane to create a signal-based mask."""
     res, inter_mask = None, phangs_intersection_mask(ref_file)
     for data_orig in tqdm(aligned_images, desc="Integrating for mask"):
@@ -23,39 +23,39 @@ def soma_img(aligned_images, ref_file):
         res = data if res is None else res + data
     return res
 
-def mask(data, N_SIGMA=3):
+def create_mask(data, n_sigma=3):
     """
     Performs sky subtraction and generates a signal mask using Median Absolute Deviation (MAD).
-    Identifies 'objects' as pixels N_SIGMA above the background noise level.
+    Identifies 'objects' as pixels n_sigma above the background noise level.
     """
-    data_filtrada = data[data != 0]
-    if data_filtrada.size == 0: return np.zeros_like(data), np.zeros_like(data, dtype=bool)
+    filtered_data = data[data != 0]
+    if filtered_data.size == 0: return np.zeros_like(data), np.zeros_like(data, dtype=bool)
 
-    local_bg = np.nanmedian(data_filtrada)
-    data_subtraida = data - local_bg
-    residuo_filtrado = data_subtraida[data != 0] 
+    local_bg = np.nanmedian(filtered_data)
+    subtracted_data = data - local_bg
+    filtered_residual = subtracted_data[data != 0] 
     
-    noise_median = np.nanmedian(residuo_filtrado)
-    mad = np.nanmedian(np.abs(residuo_filtrado - noise_median))
+    noise_median = np.nanmedian(filtered_residual)
+    mad = np.nanmedian(np.abs(filtered_residual - noise_median))
     sigma_bg = 1.4826 * mad # Conversion factor from MAD to Sigma
 
-    mask_res = (data_subtraida > (N_SIGMA * sigma_bg)) if sigma_bg > 0 else np.zeros_like(data, dtype=bool)
-    if sigma_bg > 0: data_subtraida[data_subtraida < 0] = 0
+    mask_res = (subtracted_data > (n_sigma * sigma_bg)) if sigma_bg > 0 else np.zeros_like(data, dtype=bool)
+    if sigma_bg > 0: subtracted_data[subtracted_data < 0] = 0
     
-    return data_subtraida, mask_res
+    return subtracted_data, mask_res
 
-def mask_after_sky_sub(data, N_SIGMA=3):
+def mask_after_sky_sub(data, n_sigma=3):
     """
-    Máscara unilateral de objetos (galáxia) após subtração de céu.
-    Estima o ruído do fundo com sigma clipping (mesmo critério usado
-    na determinação do nível do céu) e seleciona pixels > N_SIGMA * ruído.
+    One-sided object mask (e.g., galaxy) post-sky subtraction.
+    Estimates background noise via sigma-clipping (using the same criteria 
+    applied during sky level estimation) and masks pixels > n_sigma * noise.
     """
     valid = data[np.isfinite(data) & (data != 0)]
     if valid.size == 0:
         return np.zeros_like(data, dtype=bool)
 
-    # sigma clipping igual ao do céu: 3 sigma, 5 iterações
+    # Sky-level sigma clipping: 3-sigma, 5 iterations
     _, sky_median, sky_std = sigma_clipped_stats(valid, sigma=3.0, maxiters=5)
-    threshold = sky_median + (N_SIGMA * sky_std)
-    # Corte unilateral: só o que está acima do ruído
+    threshold = sky_median + (n_sigma * sky_std)
+    # One-sided thresholding: only select pixels above the noise level
     return data > threshold
