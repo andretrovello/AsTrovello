@@ -169,7 +169,8 @@ def main():
                 kernel_fits = fftconvolve_dict[k]['kernel']['path']
 
                 # Run the convolution (FFT based)
-                galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, GAL_NAME = True, error = True)
+                galaxy_name = aat.create_convolvedFITS(original_fits , kernel_fits, output_dir = convolved_fits_path, 
+                                                        GAL_NAME = True, error = True)
 
             # Handle the Master image (it doesn't need convolution, but it error map needs to be converted to sigma in all cases)
             master_source_dir = reprojected_path / galaxy_name
