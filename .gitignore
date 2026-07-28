@@ -1,0 +1,17 @@
+# Ignore all fits files
+*.fits
+*.fits.gz
+*.fts
+
+
+# Ignore folders
+Input/
+Output/
+src/*.egg-info/
+dist/
+
+# Ignore temp files
+__pycache__/
+*.py[cod]
+.DS_Store
+.ipynb_checkpoints/	
