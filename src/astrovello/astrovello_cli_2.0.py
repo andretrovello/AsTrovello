@@ -46,7 +46,6 @@ def main():
                             "binned_factor": 4,
                             "unit_type": "electrons/s", # usado em units.py
                             "force_tan_sip": False,
-                            "image_suffix": f"*{galaxy.lower()}*_exp-drc-sci.fits",
                             "psf_suffix": "*PSFSTD*.fits"
                         },
                         "S4G":
@@ -61,33 +60,35 @@ def main():
                             "binned_factor": 5,
                             "unit_type": "mjy/sr", # usado em units.py
                             "force_tan_sip": True,
-                            "image_suffix": f"{galaxy.upper()}.phot.*.fits",
                             "psf_suffix": "*_col129_row129.fits"
                         }
                     }
 
 
     INPUT_DIR = BASE_DIR / "Input"
-    SURVEYS = [x for x in INPUT_DIR.iterdir() if x.is_dir()]
+    SURVEYS = [x.name for x in INPUT_DIR.iterdir() if x.is_dir()]
     print(f">>> Found Surveys: {SURVEYS}")
-    cube_selection = str(input("\t1. Build datacube for all? (Y/n)"))
+    cube_selection = str(input("\t1. Build datacube for all (Y/n)? "))
     answer_validation = False
     while answer_validation == False:
         if cube_selection.upper() == "Y":
             print(">>> Proceeding with all surveys...")
             answer_validation = True
         elif cube_selection.upper() == "N":
-            survey_selection = str(input("Select desired cubes (PHANGS, S4G, JPAS,...):"))
-            cube_validation = False
-            clean_survey_list = survey_selection.upper().split(",").strip()
-            validation = set(clean_survey_list).issubset(set(SURVEY_CONFIG.keys()))
+            survey_selection = str(input("Select desired cubes (PHANGS, S4G, JPAS,...): "))
+            clean_survey_list = survey_selection.split(",")
+            clean_survey_list = [x.strip().upper() for x in clean_survey_list]
+            cube_validation = set(clean_survey_list).issubset(set(SURVEY_CONFIG.keys()))
             while cube_validation == False:
                 if validation:
                     print(f">>> Proceeding with selected surveys: {clean_survey_list}")
+                    cube_validation = True
+                    answer_validation = True
                 else:
                     print(">>> Not all surveys were found. Please select again")
                     cube_validation = False
-
+        else:
+            print("\tProvide Y/n answer.")
 
 if __name__ == "__main__":
     main()
