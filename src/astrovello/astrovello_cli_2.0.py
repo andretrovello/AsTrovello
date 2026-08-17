@@ -33,7 +33,14 @@ def main():
     BASE_DIR = CWD.parents[1]
     print(f'Root Directory: {BASE_DIR}')
 
+    galaxy = args.galaxy
+
     input_dir = BASE_DIR / 'Input'
+    output_dir = BASE_DIR / "Output"
+
+    psf_dir = input_dir / galaxy / "PSF"
+    img_dir = input_dir / galaxy / "galaxies"
+
     if not input_dir.exists():
         print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
         print("Make sure you are in the correct directory.")
@@ -74,12 +81,18 @@ def main():
         "S4G": S4G_Driver(config_dict = SURVEY_CONFIG["S4G"])
     }
 
+
+    image_files = []
+    psf_files = []
+
+    # ----------------- Calculate Survey Resolutions -----------------
+
     # =================================================================================================
     # ====================================== CONVOLUTION ALGORITHM ==================================== 
     print(">>> Initianting convolution process...")
 
-    image_files = []
-    psf_files = []
+
+
 
     if args.mode == 'full' or args.mode == 'conv_only':
         if args.create_kernel:

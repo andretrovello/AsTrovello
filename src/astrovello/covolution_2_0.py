@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pypher
 import warnings
+from astropy.io import fits
+from astropy.utils.exceptions import AstropyWarning
 
 def get_fwhm(data: np.ndarray) -> float:
     """
