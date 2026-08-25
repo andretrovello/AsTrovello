@@ -23,8 +23,7 @@ class BASE_Driver:
         self.config = config_dict
 
     def get_files(self, dir_path: Path, mode: str) -> list:
-        # A busca via glob agora mora apenas AQUI no pai!
-        suffix_key = f"{mode}_suffix"
+        suffix_key = f"{mode}_glob"
         
         if suffix_key in self.config:
             # O f-string no glob permite injetar variáveis caso o sufixo use o nome da galáxia!

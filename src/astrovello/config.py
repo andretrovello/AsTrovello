@@ -85,97 +85,30 @@ PIVOT_WAVELENGTHS = {
 # --------------------------------------------------- Survey registry --------------------------------------------------
 
 SURVEY_CONFIG = {
-
-    'PHANGS': {
-        'is_reference': True,          # provides the astrometric grid everything else reprojects onto
-
-        'pixel_scale_arcsec': 0.0395,  # native WFC3/UVIS scale
-        'instrument_check': 'INSTRUME',
-        'instrument_value': 'WFC3',
-
-        'psf_binned_factor': 4,        # PSF model is 4x oversampled relative to native scale
-        'force_tan_sip': False,
-
-        'sci_glob': '*exp-drc-sci.fits',
-        'err_glob': '*err-drc-wht.fits',
-        'psf_glob': '*.fits',
-
-        # BUNIT (as read from header) -> name of the conversion routine to apply
-        'bunit_map': {
-            'ELECTRONS/S': 'photfnu',
-            'UNITLESS': 'photfnu',
-        },
-        'error_type': 'weight',        # 1/sigma^2; needs sqrt(1/x) to become sigma
-
-        # Generic filename-parsing rule consumed by Base_Driver.parse_filename().
-        # galaxy/filter are extracted by splitting on `delimiter` and taking
-        # the given index; `strip_substrings` are removed from the galaxy name.
-        'filename_parse': {
-            'delimiter': '_',
-            'galaxy_index': 4,
-            'filter_index': 5,
-            'strip_substrings': ['mosaic'],
-        },
-
-        # Exact filename -> filter lookup for PSF files that don't follow the
-        # generic science-filename convention (used before the generic rule).
-        'psf_filename_map': {},
-        'psf_filename_parse': {
-            'delimiter': '_',
-            'filter_index': -1,
-            'strip_suffix': '.fits',
-        },
-    },
-
-    'S4G': {
-        'is_reference': False,
-
-        # IRAC1/IRAC2 have slightly different native pixel scales
-        'pixel_scale_arcsec': {'irac1': 1.221, 'irac2': 1.213},
-        'instrument_check': 'INSTRUME',
-        'instrument_value': 'IRAC',
-
-        'psf_binned_factor': 5,
-        'force_tan_sip': True,         # Spitzer headers need SIP correction forced
-
-        'sci_glob': '*phot*.fits',
-        'err_glob': '*sigma2014.fits',
-        'psf_glob': '*.fits',
-
-        'bunit_map': {
-            'MJy/sr': 'mjy_sr_to_jy_pixel',
-        },
-        'error_type': 'sigma',         # already provided as standard deviation
-
-        'filename_parse': {
-            'delimiter': '_',
-            'galaxy_index': 0,
-            'filter_index': 2,
-            'strip_substrings': [],
-        },
-
-        # S4G PSF files don't follow the science-filename convention at all —
-        # exact lookup table instead of a split rule.
-        'psf_filename_map': {
-            'IRAC1_col129_row129.fits': 'irac1',
-            'IRAC2_col129_row129.fits': 'irac2',
-        },
-        'psf_filename_parse': None,
-    },
-
-    # --- Template for a new survey ---
-    # 'JPAS': {
-    #     'is_reference': False,
-    #     'pixel_scale_arcsec': ...,
-    #     'instrument_check': 'INSTRUME',
-    #     'instrument_value': ...,
-    #     'psf_binned_factor': ...,
-    #     'force_tan_sip': ...,
-    #     'sci_glob': ..., 'err_glob': ..., 'psf_glob': ...,
-    #     'bunit_map': {...},
-    #     'error_type': ...,           # 'weight' | 'sigma' | 'variance'
-    #     'filename_parse': {'delimiter': ..., 'galaxy_index': ..., 'filter_index': ..., 'strip_substrings': [...]},
-    #     'psf_filename_map': {...},   # exact lookups, if any
-    #     'psf_filename_parse': {...} or None,
-    # },
-}
+                    "PHANGS": 
+                    {
+                        "TELESCOP": "HST",
+                        "INSTRUME": "WFC3",
+                        "pixel_scale_arcsec": 0.0395,
+                        "binned_factor": 4,
+                        "unit_type": "electrons/s", # usado em units.py
+                        "force_tan_sip": False,
+                        "sci_glob": "*_exp-drc-sci.fits",
+                        "psf_glob": "*PSFSTD*.fits"
+                    },
+                    "S4G":
+                    {
+                        "TELESCOP": "Spitzer",
+                        "INSTRUME": "IRAC",
+                        "pixel_scale_arcsec": 
+                        {
+                            1: 1.221, # Channel 1
+                            2: 1.223 # Channel 2
+                        },
+                        "binned_factor": 5,
+                        "unit_type": "mjy/sr", # usado em units.py
+                        "foscian_sip": True,
+                        "sci_glob": "*.phot.*.fits",
+                        "psf_glob": "*_col129_row129.fits"
+                    }
+                }

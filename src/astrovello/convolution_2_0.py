@@ -9,6 +9,7 @@ import pypher
 import warnings
 from astropy.io import fits
 from astropy.utils.exceptions import AstropyWarning
+from astropy.modeling import models, fitting
 
 def get_fwhm(data: np.ndarray) -> float:
     """

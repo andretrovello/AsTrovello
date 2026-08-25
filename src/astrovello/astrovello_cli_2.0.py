@@ -1,5 +1,6 @@
 from config import SURVEY_CONFIG
 from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
+from convolution_2_0 import get_fwhm, calculateFWHM
 from pathlib import Path
 import argparse
 import gc
@@ -38,9 +39,6 @@ def main():
     input_dir = BASE_DIR / 'Input'
     output_dir = BASE_DIR / "Output"
 
-    psf_dir = input_dir / galaxy / "PSF"
-    img_dir = input_dir / galaxy / "galaxies"
-
     if not input_dir.exists():
         print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
         print("Make sure you are in the correct directory.")
@@ -55,6 +53,7 @@ def main():
 
         if cube_selection.upper().strip() == "Y":
             print(">>> Proceeding with all surveys...")
+            clean_survey_list = SURVEYS
             answer_validation = True
 
         elif cube_selection.upper().strip() == "N":
@@ -81,30 +80,48 @@ def main():
         "S4G": S4G_Driver(config_dict = SURVEY_CONFIG["S4G"])
     }
 
-
+    # ------ Get files ------
     image_files = []
     psf_files = []
 
+    for survey in clean_survey_list:
+        img_dir = input_dir / survey / "galaxies" / galaxy 
+        psf_dir = input_dir / survey / "PSF" 
+
+        # print(img_dir)
+        
+        current_img_files = DRIVERS[survey].get_files(dir_path = img_dir, mode = "sci")
+        current_psf_files = DRIVERS[survey].get_files(dir_path = psf_dir, mode = "psf")
+        
+        image_files = image_files + current_img_files
+        psf_files = psf_files + current_psf_files
     # ----------------- Calculate Survey Resolutions -----------------
+    # print(len(image_files))
+    # print(len(psf_files))
+    print(">>> Calculating survey resolutions...")
+    fwhm_dict, valid_files = calculateFWHM(psf_file_list = psf_files, drivers = DRIVERS)
+    print(valid_files)
+    df_fwhm = pd.DataFrame(list(fwhm_dict.items()), columns=["Filter", "FWHM_arcsec"])
+    df_fwhm = df_fwhm.sort_values(by = "FWHM_arcsec").reset_index(drop=True)
+    print("\nResolutions Table:\n", df_fwhm)
+    psf_master_name = df_fwhm.iloc[-1]['Filter']
+    print(f"\n==> Recommended PSF (master): {psf_master_name}")
 
     # =================================================================================================
     # ====================================== CONVOLUTION ALGORITHM ==================================== 
     print(">>> Initianting convolution process...")
 
 
+    # if args.mode == 'full' or args.mode == 'conv_only':
+    #     if args.create_kernel:
+            
+    # # =================================================================================================
+    # # ====================================== ALINGMENT ALGORITHM ====================================== 
+    # if args.mode == 'full' or args.mode == 'alignment_only':
 
-
-    if args.mode == 'full' or args.mode == 'conv_only':
-        if args.create_kernel:
-
-
-    # =================================================================================================
-    # ====================================== ALINGMENT ALGORITHM ====================================== 
-    if args.mode == 'full' or args.mode == 'alignment_only':
-
-    # =================================================================================================
-    # ====================================== DATA CUBE ALGORITHM ====================================== 
-    if args.mode == 'full' or args.mode == 'alignment_only':
+    # # =================================================================================================
+    # # ====================================== DATA CUBE ALGORITHM ====================================== 
+    # if args.mode == 'full' or args.mode == 'alignment_only':
 
 
 
