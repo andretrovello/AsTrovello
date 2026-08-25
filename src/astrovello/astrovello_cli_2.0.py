@@ -1,6 +1,6 @@
 from config import SURVEY_CONFIG
 from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
-from convolution_2_0 import get_fwhm, calculateFWHM
+from convolution_2_0 import get_fwhm, calculateFWHM, clean_psf
 from pathlib import Path
 import argparse
 import gc
@@ -109,12 +109,12 @@ def main():
 
     # =================================================================================================
     # ====================================== CONVOLUTION ALGORITHM ==================================== 
-    print(">>> Initianting convolution process...")
+    print(">>> Initiating convolution process...")
 
     if args.mode == 'full' or args.mode == 'conv_only':
         if args.create_kernel:
             print(">>> Cleaning PSFs...")
-            # ------ Create directory (and deleted previously existing one) ------
+            # ------ Create directory (and delete previously existing one) ------
             for survey in clean_survey_list:
                 clean_psf_dir = input_dir / survey / "PSF_CLEAN"
                 if clean_psf_dir.is_dir():
@@ -122,8 +122,20 @@ def main():
                     shutil.rmtree(clean_psf_dir)
                 os.mkdir(clean_psf_dir)
                 print(f"\tCreated: {clean_psf_dir}")
+            # ------ PSF cleaning ------
+            print(">>> Starting PSF cleaning...")
+            for psf_file_path in psf_dir:
+                survey = DRIVERS["BASE"].get_survey(file_path = psf_file_path)
+                driver = DRIVERS[survey]
+                filtername = driver.get_filter_name(filename = psf_file_path)
+                clean_psf(input_file = psf_file_path,
+                            output_file = psf_file_path, 
+                            pixel_scale_arcsec = driver.get_pixelscale(filtername = filtername), 
+                            binned_factor = driver.get_binned_factor())
+
+
         else:
-            print(">>> No kernel creation requested.")
+            print("No kernel creation requested.")
             
             
             
