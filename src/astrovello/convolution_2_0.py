@@ -10,6 +10,7 @@ import warnings
 from astropy.io import fits
 from astropy.utils.exceptions import AstropyWarning
 from astropy.modeling import models, fitting
+from astropy.nddata import block_reduce
 
 def get_fwhm(data: np.ndarray) -> float:
     """

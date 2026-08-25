@@ -111,9 +111,21 @@ def main():
     # ====================================== CONVOLUTION ALGORITHM ==================================== 
     print(">>> Initianting convolution process...")
 
-
-    # if args.mode == 'full' or args.mode == 'conv_only':
-    #     if args.create_kernel:
+    if args.mode == 'full' or args.mode == 'conv_only':
+        if args.create_kernel:
+            print(">>> Cleaning PSFs...")
+            # ------ Create directory (and deleted previously existing one) ------
+            for survey in clean_survey_list:
+                clean_psf_dir = input_dir / survey / "PSF_CLEAN"
+                if clean_psf_dir.is_dir():
+                    print(f"\tRemoving old PSF_CLEAN directory and setting up a new one ({survey})")
+                    shutil.rmtree(clean_psf_dir)
+                os.mkdir(clean_psf_dir)
+                print(f"\tCreated: {clean_psf_dir}")
+        else:
+            print(">>> No kernel creation requested.")
+            
+            
             
     # # =================================================================================================
     # # ====================================== ALINGMENT ALGORITHM ====================================== 
