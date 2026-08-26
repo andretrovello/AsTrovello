@@ -27,7 +27,7 @@ SURVEY_CONFIG : dict of {str : dict}
     means nobody needs to be pre-matched to a common grid here; that
     happens only at the alignment step.
 
-Notes
+Notesf
 -----
 Keys expected in each `SURVEY_CONFIG` entry:
 

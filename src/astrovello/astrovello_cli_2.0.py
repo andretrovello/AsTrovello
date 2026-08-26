@@ -124,16 +124,16 @@ def main():
                 print(f"\tCreated: {clean_psf_dir}")
             # ------ PSF cleaning ------
             print(">>> Starting PSF cleaning...")
-            for psf_file_path in psf_dir:
+            for psf_file_path in psf_files:
                 survey = DRIVERS["BASE"].get_survey(file_path = psf_file_path)
                 driver = DRIVERS[survey]
-                filtername = driver.get_filter_name(filename = psf_file_path)
+                filter_name = driver.get_filter_name(filename = str(psf_file_path))
+                filename = psf_file_path.name
+                output_clean_psf_path = clean_psf_dir / filename
                 clean_psf(input_file = psf_file_path,
-                            output_file = psf_file_path, 
-                            pixel_scale_arcsec = driver.get_pixelscale(filtername = filtername), 
-                            binned_factor = driver.get_binned_factor())
-
-
+                            output_file = output_clean_psf_path, 
+                            pixel_scale_arcsec = driver.get_pixel_scale(filter_name = filter_name), 
+                            binned_factor = driver.get_binned_factor)
         else:
             print("No kernel creation requested.")
             
