@@ -133,6 +133,14 @@ def main():
                             output_file = output_clean_psf_path, 
                             pixel_scale_arcsec = driver.get_pixel_scale(filter_name = filter_name), 
                             binned_factor = driver.get_binned_factor)
+            # ------ Pypher kernel creation ------
+            psf_by_filter = {
+                DRIVERS[DRIVERS["BASE"].get_survey(p)].get_filter_name(str(p)): p
+                for p in psf_files
+            }
+            print(">>> Intianting kernel creation...")
+            master_psf_path = psf_by_filter.get(psf_master_name.lower())
+            print(master_psf_path)
         else:
             print("No kernel creation requested.")
 
