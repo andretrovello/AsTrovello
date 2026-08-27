@@ -180,4 +180,4 @@ def clean_psf(input_file: str, output_file: str, pixel_scale_arcsec: float, binn
         })
         
         new_hdu.writeto(output_file, overwrite=True)
-        print(f"==> File ready for PyPHER (Binned {binned_factor}x): {os.path.basename(output_file)}")
+        print(f"\tFile ready for PyPHER (Binned {binned_factor}x): {os.path.basename(output_file)}")

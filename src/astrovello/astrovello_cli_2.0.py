@@ -53,20 +53,20 @@ def main():
 
         if cube_selection.upper().strip() == "Y":
             print(">>> Proceeding with all surveys...")
-            clean_survey_list = SURVEYS
+            input_survey_list = SURVEYS
             answer_validation = True
 
         elif cube_selection.upper().strip() == "N":
             cube_validation = False
             while not cube_validation:
                 survey_selection = str(input("\tSelect desired cubes (PHANGS, S4G, JPAS,...): "))
-                clean_survey_list = [x.strip().upper() for x in survey_selection.split(",")]
+                input_survey_list = [x.strip().upper() for x in survey_selection.split(",")]
 
                 available_and_configured = set(SURVEYS).intersection(set(SURVEY_CONFIG.keys()))
-                cube_validation = set(clean_survey_list).issubset(available_and_configured)
+                cube_validation = set(input_survey_list).issubset(available_and_configured)
 
                 if cube_validation:
-                    print(f">>> Proceeding with selected surveys: {clean_survey_list}")
+                    print(f">>> Proceeding with selected surveys: {input_survey_list}")
                     answer_validation = True
                 else:
                     print(f">>> Error: Please select only from available and configured surveys: {list(available_and_configured)}")
@@ -81,10 +81,10 @@ def main():
     }
 
     # ------ Get files ------
-    image_files = []
+    img_files = []
     psf_files = []
 
-    for survey in clean_survey_list:
+    for survey in input_survey_list:
         img_dir = input_dir / survey / "galaxies" / galaxy 
         psf_dir = input_dir / survey / "PSF" 
 
@@ -93,10 +93,10 @@ def main():
         current_img_files = DRIVERS[survey].get_files(dir_path = img_dir, mode = "sci")
         current_psf_files = DRIVERS[survey].get_files(dir_path = psf_dir, mode = "psf")
         
-        image_files = image_files + current_img_files
+        img_files = img_files + current_img_files
         psf_files = psf_files + current_psf_files
     # ----------------- Calculate Survey Resolutions -----------------
-    # print(len(image_files))
+    # print(len(img_files))
     # print(len(psf_files))
     print(">>> Calculating survey resolutions...")
     fwhm_dict, valid_files = calculateFWHM(psf_file_list = psf_files, drivers = DRIVERS)
@@ -115,7 +115,7 @@ def main():
         if args.create_kernel:
             print(">>> Cleaning PSFs...")
             # ------ Create directory (and delete previously existing one) ------
-            for survey in clean_survey_list:
+            for survey in input_survey_list:
                 clean_psf_dir = input_dir / survey / "PSF_CLEAN"
                 if clean_psf_dir.is_dir():
                     print(f"\tRemoving old PSF_CLEAN directory and setting up a new one ({survey})")
@@ -123,19 +123,19 @@ def main():
                 os.mkdir(clean_psf_dir)
                 print(f"\tCreated: {clean_psf_dir}")
             # ------ PSF cleaning ------
-            print(">>> Starting PSF cleaning...")
             for psf_file_path in psf_files:
                 survey = DRIVERS["BASE"].get_survey(file_path = psf_file_path)
                 driver = DRIVERS[survey]
                 filter_name = driver.get_filter_name(filename = str(psf_file_path))
                 filename = psf_file_path.name
-                output_clean_psf_path = clean_psf_dir / filename
+                output_clean_psf_path = input_dir / survey / "PSF_CLEAN" / filename
                 clean_psf(input_file = psf_file_path,
                             output_file = output_clean_psf_path, 
                             pixel_scale_arcsec = driver.get_pixel_scale(filter_name = filter_name), 
                             binned_factor = driver.get_binned_factor)
         else:
             print("No kernel creation requested.")
+
             
             
             
