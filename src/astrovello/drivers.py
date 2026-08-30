@@ -35,6 +35,12 @@ class BASE_Driver:
             
         raise ValueError(f"Mode '{mode}' not configured for {self.__class__.__name__}.")
 
+    def get_psf_filter_name(self, filename: str) -> str:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_psf_filter_name().")
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_sci_filter_name().")
+
     def get_survey(self, file_path: Path) -> str:
         AVAILABLE_SURVEYS = self.config.keys()
         for survey in AVAILABLE_SURVEYS:
@@ -63,14 +69,16 @@ class BASE_Driver:
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_invalid_mask().")
 
-
-
 # ================================= PHANGS Class =================================
 class PHANGS_Driver(BASE_Driver):
     """Herda get_files e get_pixel_scale de BaseDriver."""
     
-    def get_filter_name(self, filename: str) -> str:
-        return filename.replace('.fits', '').split('_')[-1].lower()
+    def get_psf_filter_name(self, filename: str) -> str:
+        return Path(filename).name.replace('.fits', '').split('_')[-1].lower()
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        # hlsp_phangs-hst_hst_wfc3-uvis_<galaxy>_<filter>_v1_exp-drc-sci.fits
+        return Path(filename).name.split('_')[5].lower()
 
     def get_galaxy_name(self, filename: str) -> str:
         gal_name = Path(filename).name.split('_')[4].lower()
@@ -109,17 +117,20 @@ class PHANGS_Driver(BASE_Driver):
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         return img_data == 0
 
-
-
-# ================================= PHANGS Class =================================
+# ================================= S4G Class =================================
 class S4G_Driver(BASE_Driver):
-    def get_filter_name(self, filename: str) -> str:
+    def get_psf_filter_name(self, filename: str) -> str:
         if 'IRAC1' in filename: return 'irac1'
         if 'IRAC2' in filename: return 'irac2'
         return 'unknown'
 
+    def get_sci_filter_name(self, filename: str) -> str:
+        # NGC1087.phot.<channel>.fits
+        channel = Path(filename).name.split('.')[-2]
+        return f'irac{channel}'
+
     def get_galaxy_name(self, filename: str) -> str:
-        return Path(filename).name.split('_')[0].lower()
+        return Path(filename).name.split('.')[0].lower()
 
     def get_pixel_scale(self, filter_name: str) -> float:
         channel = 1 if filter_name == 'irac1' else 2

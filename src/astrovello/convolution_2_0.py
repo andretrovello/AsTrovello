@@ -102,7 +102,7 @@ def calculateFWHM(psf_file_list: list, drivers: dict) -> tuple[dict, list]:
 
         driver = drivers[survey]
 
-        filter_name = driver.get_filter_name(filename = str_file)
+        filter_name = driver.get_psf_filter_name(filename = str_file)
         psf_pixscale = driver.get_psf_pixel_scale(filter_name = filter_name)
 
         try:
@@ -235,23 +235,21 @@ def convolved_dict(img_files: list, kernel_files: list, drivers: dict) -> dict:
     Returns
     -------
     dict of {str : dict}
-        ``{filter_name: {'img': Path, 'kernel': Path}}``. The master filter
-        is naturally excluded (it has no kernel) — the caller must copy the
-        master image over as-is, without convolution.
+        ``{filter_name: {'img': Path, 'kernel': Path, 'survey': str}}``. The
+        master filter is naturally excluded (it has no kernel) — the caller
+        must copy the master image over as-is, without convolution.
     """
     conv_dict = {}
-
     for img_path in img_files:
         survey = drivers["BASE"].get_survey(file_path=img_path)
-        filt = drivers[survey].get_filter_name(filename=str(img_path))
+        filt = drivers[survey].get_sci_filter_name(filename=str(img_path))
         conv_dict.setdefault(filt, {})['img'] = img_path
+        conv_dict.setdefault(filt, {})['survey'] = survey   
 
     for kernel_path in kernel_files:
         filt = kernel_path.stem.split('_')[1]   # kernel_{filt}_to_{master}.fits
         conv_dict.setdefault(filt, {})['kernel'] = kernel_path
 
-    # Any filter missing either half is either the master (expected, no kernel)
-    # or a genuine mismatch (unexpected — worth a warning).
     complete, incomplete = {}, {}
     for filt, paths in conv_dict.items():
         if 'img' in paths and 'kernel' in paths:
@@ -313,14 +311,14 @@ def diagnose_negatives(convolved_img, img_data, filt, survey, driver):
     print(f"Negatives within 1-sigma of noise: {np.sum(convolved_img < -1*noise)}")
     print(50*'-')
 
-def create_convolvedFITS(original_fits, kernel_fits, survey, output_dir, drivers, force = False, gal_name_return = False):
+def create_convolvedFITS(original_fits, kernel_fits, survey, psf_master_name, output_dir, drivers, force=False, gal_name_return=False):
     driver = drivers[survey]
     original_file_name = original_fits.name if hasattr(original_fits, 'name') else os.path.basename(original_fits)
     gal_name = driver.get_galaxy_name(original_file_name)
-    filt = driver.get_filter_name(original_file_name)
+    filt = driver.get_sci_filter_name(original_file_name)
 
     output_path = output_dir / gal_name
-    out_file = output_path / f'{gal_name}_{survey}_{filt}_convolved.fits'
+    out_file = output_path / f'{gal_name}_{survey}_{filt}_to_{psf_master_name}_convolved.fits'
 
     if out_file.exists() and not force:
         print(f"==> Already convolved, skipping: {out_file.name}")
@@ -352,7 +350,7 @@ def create_convolvedFITS(original_fits, kernel_fits, survey, output_dir, drivers
     convolved_fits = fits.PrimaryHDU(data=convolved_img, header=img_header)
     print(100*'#' + f'\nConvolving {filt} filter from {survey} survey:')
     convolved_fits.writeto(out_file, overwrite=True)
-    print(f'Convolved FITS saved to: {out_file}\n' + 100*'#')
+    print(f'\tConvolved FITS saved to: {out_file}\n' + 100*'#')
 
     if gal_name_return:
         return gal_name

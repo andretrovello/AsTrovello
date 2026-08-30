@@ -134,21 +134,21 @@ def main():
                     print(f"\tRemoving old PSF_CLEAN directory and setting up a new one ({survey})")
                     shutil.rmtree(clean_psf_dir)
                 os.mkdir(clean_psf_dir)
-                print(f"\tCreated: {clean_psf_dir}")
+                print(f"\tCreated: {clean_psf_dir}\n")
             # ------ PSF cleaning ------
             cleaned_psf_by_filter = {}
 
             for psf_file_path in psf_files:
                 survey = DRIVERS["BASE"].get_survey(file_path = psf_file_path)
                 driver = DRIVERS[survey]
-                filter_name = driver.get_filter_name(filename = str(psf_file_path))
+                filter_name = driver.get_psf_filter_name(filename = str(psf_file_path))
 
                 output_clean_psf_path = input_dir / survey / "PSF_CLEAN" / psf_file_path.name
                 clean_psf(
-                    input_file=psf_file_path,
-                    output_file=output_clean_psf_path,
-                    pixel_scale_arcsec=driver.get_pixel_scale(filter_name=filter_name),
-                    binned_factor=driver.get_binned_factor,
+                    input_file = psf_file_path,
+                    output_file = output_clean_psf_path,
+                    pixel_scale_arcsec = driver.get_pixel_scale(filter_name = filter_name),
+                    binned_factor = driver.get_binned_factor,
                 )
 
                 cleaned_psf_by_filter[filter_name] = output_clean_psf_path
@@ -187,12 +187,15 @@ def main():
             print('\n\tCreating convolution directory...')
             os.makedirs(convolved_fits_path_gal, exist_ok=True)
 
+        print(f"IMAGE FILES: {len(img_files)}")
         # Pair images with their specific kernels
         fftconvolve_dict = convolved_dict(
-            img_files=img_files,
+            img_files = img_files,
             kernel_files = kernel_files,
             drivers=DRIVERS,
         )
+
+        # print(fftconvolve_dict)
 
         for key in fftconvolve_dict:
             original_fits = fftconvolve_dict[key]['img']
@@ -202,15 +205,18 @@ def main():
             # Run the convolution (FFT based)
             create_convolvedFITS(
                 original_fits, kernel_fits,
-                survey=survey, output_dir=convolved_fits_path,
-                drivers=DRIVERS, gal_name_return=True,
+                survey = survey, psf_master_name = psf_master_name,
+                output_dir = convolved_fits_path,
+                drivers = DRIVERS, gal_name_return = True,
+                force = True
             )
 
         # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
         img_by_filter = {}
+        # print(img_files)
         for img_path in img_files:
-            survey_i = DRIVERS["BASE"].get_survey(file_path=img_path)
-            filt_i = DRIVERS[survey_i].get_filter_name(filename=str(img_path))
+            survey_i = DRIVERS["BASE"].get_survey(file_path = img_path)
+            filt_i = DRIVERS[survey_i].get_sci_filter_name(filename = str(img_path))
             img_by_filter[filt_i] = {'path': img_path, 'survey': survey_i}
 
         master_survey = img_by_filter[psf_master_name]['survey']
