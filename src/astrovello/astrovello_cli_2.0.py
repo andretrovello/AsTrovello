@@ -1,18 +1,26 @@
-from config import SURVEY_CONFIG
-from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
-from convolution_2_0 import get_fwhm, calculateFWHM, clean_psf
-from pathlib import Path
 import argparse
 import gc
-from pathlib import Path
 import os
-from tqdm import tqdm
-from astropy.io import fits
-import pandas as pd
-import subprocess
 import shutil
-# import astrovello as aat
+import subprocess
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
+from astropy.io import fits
+from tqdm import tqdm
+
+from config import SURVEY_CONFIG
+from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
+from convolution_2_0 import (
+    get_fwhm,
+    calculateFWHM,
+    clean_psf,
+    pypher_kernel_creation,
+    convolved_dict,
+    diagnose_negatives,
+    create_convolvedFITS,
+)
 
 def main():
     parser = argparse.ArgumentParser('AsTrovello Pipeline Control')
@@ -43,6 +51,11 @@ def main():
         print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
         print("Make sure you are in the correct directory.")
         return
+
+    # Define Output directory structure
+    reprojected_path = output_dir / 'reprojected_files' 
+    kernel_dir = output_dir / 'PSF_Kernels'
+    convolved_fits_path = output_dir / 'convolved_fits' 
 
     SURVEYS = [x.name for x in input_dir.iterdir() if x.is_dir()]
     print(f">>> Found Surveys: {SURVEYS}")
@@ -123,28 +136,94 @@ def main():
                 os.mkdir(clean_psf_dir)
                 print(f"\tCreated: {clean_psf_dir}")
             # ------ PSF cleaning ------
+            cleaned_psf_by_filter = {}
+
             for psf_file_path in psf_files:
                 survey = DRIVERS["BASE"].get_survey(file_path = psf_file_path)
                 driver = DRIVERS[survey]
                 filter_name = driver.get_filter_name(filename = str(psf_file_path))
-                filename = psf_file_path.name
-                output_clean_psf_path = input_dir / survey / "PSF_CLEAN" / filename
-                clean_psf(input_file = psf_file_path,
-                            output_file = output_clean_psf_path, 
-                            pixel_scale_arcsec = driver.get_pixel_scale(filter_name = filter_name), 
-                            binned_factor = driver.get_binned_factor)
-            # ------ Pypher kernel creation ------
-            psf_by_filter = {
-                DRIVERS[DRIVERS["BASE"].get_survey(p)].get_filter_name(str(p)): p
-                for p in psf_files
-            }
-            print(">>> Intianting kernel creation...")
-            master_psf_path = psf_by_filter.get(psf_master_name.lower())
-            print(master_psf_path)
-        else:
-            print("No kernel creation requested.")
 
-            
+                output_clean_psf_path = input_dir / survey / "PSF_CLEAN" / psf_file_path.name
+                clean_psf(
+                    input_file=psf_file_path,
+                    output_file=output_clean_psf_path,
+                    pixel_scale_arcsec=driver.get_pixel_scale(filter_name=filter_name),
+                    binned_factor=driver.get_binned_factor,
+                )
+
+                cleaned_psf_by_filter[filter_name] = output_clean_psf_path
+
+            # ------ Pypher kernel creation ------
+            print(">>> Initiating kernel creation...")
+            # print(master_psf_path)
+            # print(cleaned_psf_by_filter)
+
+            pypher_commands = pypher_kernel_creation(cleaned_psf_by_filter = cleaned_psf_by_filter, 
+                                psf_master_name = psf_master_name,
+                                output_dir = kernel_dir)
+            # print(pypher_commands)
+            print(f"\n--- Creating {len(pypher_commands)} kernels via PyPHER ---")
+            for c in pypher_commands:
+                print(f"----- Running: {c} -----")
+                try:
+                    # Execute PyPHER in the shell; check=True raises an error if it fails
+                    subprocess.run(c, shell=True, check=True)
+                    print("==> Kernel generated successfully!")
+                except subprocess.CalledProcessError as e:
+                    print(f"==> PyPHER error: {e}")
+                    continue 
+
+            print("\n>>> Kernel processing completed!")
+        else:
+            # If kernels already exist, skip generation and identify the current Master filter
+            print('>>> Matching kernels already exist. Proceeding to image convolution...')
+        kernel_files = list(kernel_dir.glob('*.fits'))
+
+        # --- IMAGE CONVOLUTION ---
+        convolved_fits_path_gal = convolved_fits_path / args.galaxy
+        if os.path.exists(convolved_fits_path_gal):
+            print('\n\tConvolution directory already exists!')
+        else:
+            print('\n\tCreating convolution directory...')
+            os.makedirs(convolved_fits_path_gal, exist_ok=True)
+
+        # Pair images with their specific kernels
+        fftconvolve_dict = convolved_dict(
+            img_files=img_files,
+            kernel_files = kernel_files,
+            drivers=DRIVERS,
+        )
+
+        for key in fftconvolve_dict:
+            original_fits = fftconvolve_dict[key]['img']
+            kernel_fits = fftconvolve_dict[key]['kernel']
+            survey = fftconvolve_dict[key]['survey']
+
+            # Run the convolution (FFT based)
+            create_convolvedFITS(
+                original_fits, kernel_fits,
+                survey=survey, output_dir=convolved_fits_path,
+                drivers=DRIVERS, gal_name_return=True,
+            )
+
+        # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
+        img_by_filter = {}
+        for img_path in img_files:
+            survey_i = DRIVERS["BASE"].get_survey(file_path=img_path)
+            filt_i = DRIVERS[survey_i].get_filter_name(filename=str(img_path))
+            img_by_filter[filt_i] = {'path': img_path, 'survey': survey_i}
+
+        master_survey = img_by_filter[psf_master_name]['survey']
+        master_img_path = img_by_filter[psf_master_name]['path']
+
+        master_dest_path = convolved_fits_path / args.galaxy / f'{args.galaxy}_{master_survey}_{psf_master_name}_master.fits'
+        shutil.copy2(master_img_path, master_dest_path)
+
+        print(100 * '#')
+        print(f'Master file {psf_master_name} from {master_survey} survey:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
+
+# -------------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------- FITS unit conversion-----------------------------------------------------
             
             
     # # =================================================================================================
