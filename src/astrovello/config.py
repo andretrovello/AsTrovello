@@ -94,8 +94,8 @@ SURVEY_CONFIG = {
                         "unit_type": "electrons/s", # usado em units.py
                         "force_tan_sip": False,
                         "sci_glob": "*_exp-drc-sci.fits",
-                        "psf_glob": "*PSFSTD*.fits"
-                    },
+                        "psf_glob": "*PSFSTD*.fits", 
+                        "apply_sip_correction": False                    },
                     "S4G":
                     {
                         "TELESCOP": "Spitzer",
@@ -109,6 +109,7 @@ SURVEY_CONFIG = {
                         "unit_type": "mjy/sr", # usado em units.py
                         "foscian_sip": True,
                         "sci_glob": "*.phot.*.fits",
-                        "psf_glob": "*_col129_row129.fits"
+                        "psf_glob": "*_col129_row129.fits",
+                        "apply_sip_correction": True
                     }
                 }

@@ -13,13 +13,16 @@ from tqdm import tqdm
 from config import SURVEY_CONFIG
 from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
 from convolution_2_0 import (
-    get_fwhm,
     calculateFWHM,
     clean_psf,
     pypher_kernel_creation,
     convolved_dict,
     diagnose_negatives,
     create_convolvedFITS,
+)
+from alignment_2_0 import (
+    discover_convolved_files,
+    reproject_to_reference
 )
 
 def main():
@@ -32,31 +35,34 @@ def main():
     parser.add_argument('--sigma', type = float, default = 1.0, help = 'Sigma threshold for sky mask cutting')
     parser.add_argument('--error', action='store_true', help='If set, creates error cube')
     parser.add_argument('--valid_pixels_cut', action='store_true', help='If set, cuts image only in a central radius where flux > 0 and not NaN')
+    parser.add_argument('--force_convolution', action='store_true', help='If set, forces convolution, even if convolved files already exist')
 
+    # --- Parse arguments ---
     args = parser.parse_args()
+    galaxy = args.galaxy
 
     print(100*'#')
     print(f'Executing AsTrovello for {args.galaxy}...\n')
 
+    # --- Essential directories ---
     CWD = Path.cwd()
     BASE_DIR = CWD.parents[1]
-    print(f'Root Directory: {BASE_DIR}')
-
-    galaxy = args.galaxy
-
     input_dir = BASE_DIR / 'Input'
     output_dir = BASE_DIR / "Output"
+
+    # Define Output directory structure
+    kernel_dir = output_dir / 'PSF_Kernels'
+    convolved_fits_dir = output_dir / 'convolved_fits' 
+    reprojected_dir = output_dir / 'reprojected_files' 
+
+    print(f'Root Directory: {BASE_DIR}')
 
     if not input_dir.exists():
         print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
         print("Make sure you are in the correct directory.")
         return
 
-    # Define Output directory structure
-    reprojected_path = output_dir / 'reprojected_files' 
-    kernel_dir = output_dir / 'PSF_Kernels'
-    convolved_fits_path = output_dir / 'convolved_fits' 
-
+    # --- Find surveys in input directory ---
     SURVEYS = [x.name for x in input_dir.iterdir() if x.is_dir()]
     print(f">>> Found Surveys: {SURVEYS}")
 
@@ -120,6 +126,16 @@ def main():
     psf_master_name = df_fwhm.iloc[-1]['Filter']
     print(f"\n==> Recommended PSF (master): {psf_master_name}")
 
+    # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
+    img_by_filter = {}
+    # print(img_files)
+    for img_path in img_files:
+        survey_i = DRIVERS["BASE"].get_survey(file_path = img_path)
+        filt_i = DRIVERS[survey_i].get_sci_filter_name(filename = str(img_path))
+        img_by_filter[filt_i] = {'path': img_path, 'survey': survey_i}
+
+    master_survey = img_by_filter[psf_master_name]['survey']
+    master_img_path = img_by_filter[psf_master_name]['path']
     # =================================================================================================
     # ====================================== CONVOLUTION ALGORITHM ==================================== 
     print(">>> Initiating convolution process...")
@@ -135,6 +151,7 @@ def main():
                     shutil.rmtree(clean_psf_dir)
                 os.mkdir(clean_psf_dir)
                 print(f"\tCreated: {clean_psf_dir}\n")
+
             # ------ PSF cleaning ------
             cleaned_psf_by_filter = {}
 
@@ -180,12 +197,12 @@ def main():
         kernel_files = list(kernel_dir.glob('*.fits'))
 
         # --- IMAGE CONVOLUTION ---
-        convolved_fits_path_gal = convolved_fits_path / args.galaxy
-        if os.path.exists(convolved_fits_path_gal):
+        convolved_fits_dir_gal = convolved_fits_dir / args.galaxy
+        if os.path.exists(convolved_fits_dir_gal):
             print('\n\tConvolution directory already exists!')
         else:
             print('\n\tCreating convolution directory...')
-            os.makedirs(convolved_fits_path_gal, exist_ok=True)
+            os.makedirs(convolved_fits_dir_gal, exist_ok=True)
 
         print(f"IMAGE FILES: {len(img_files)}")
         # Pair images with their specific kernels
@@ -206,25 +223,14 @@ def main():
             convolved_file_path = create_convolvedFITS(
                 original_fits = original_fits, kernel_fits = kernel_fits,
                 survey = survey, psf_master_name = psf_master_name,
-                output_dir = convolved_fits_path,
+                master_survey = master_survey, output_dir = convolved_fits_dir,
                 drivers = DRIVERS,
-                force = True
+                force = args.force_convolution
             )
 
             fftconvolve_dict[key]["convolved_file_path"] = convolved_file_path
 
-        # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
-        img_by_filter = {}
-        # print(img_files)
-        for img_path in img_files:
-            survey_i = DRIVERS["BASE"].get_survey(file_path = img_path)
-            filt_i = DRIVERS[survey_i].get_sci_filter_name(filename = str(img_path))
-            img_by_filter[filt_i] = {'path': img_path, 'survey': survey_i}
-
-        master_survey = img_by_filter[psf_master_name]['survey']
-        master_img_path = img_by_filter[psf_master_name]['path']
-
-        master_dest_path = convolved_fits_path / galaxy / f'{galaxy}_{psf_master_name}_master.fits'
+        master_dest_path = convolved_fits_dir / galaxy / f'{galaxy}_{master_survey.lower()}_{psf_master_name}_master.fits'
         shutil.copy2(master_img_path, master_dest_path)
 
         print(100 * '#')
@@ -234,11 +240,30 @@ def main():
     # # ====================================== ALINGMENT ALGORITHM ====================================== 
     if args.mode == 'full' or args.mode == 'alignment_only':
         print(">>> Initiating image alignment process...")
-        conv_file_pattern = f"*{galaxy}_*_to_{psf_master_name}_convolved.fits" 
-        galaxy_convolved_fits_path = convolved_fits_path / galaxy
-        conv_img_files = list(galaxy_convolved_fits_path.glob(conv_file_pattern))
-        if args.mode == "alignment_only":
-            master_dest_path = galaxy_convolved_fits_path / f'{args.galaxy}_{psf_master_name}_master.fits'
+        convolved_files_dict = discover_convolved_files(convolved_fits_dir, galaxy)
+        reference_entry = next(v for v in convolved_files_dict.values() if v['is_master'])
+        reference_fits = reference_entry['path']
+
+        ref_driver = DRIVERS[reference_entry["survey"]]
+        reference_apply_sip = ref_driver.get_sip
+
+        for filt, entry in convolved_files_dict.items():
+            if entry['is_master']:
+                continue
+
+            img_driver = DRIVERS[entry['survey']]
+            img_to_reproject_apply_sip = img_driver.get_sip
+            reproject_to_reference(
+                img_to_reproject = entry['path'],
+                reference_img = reference_fits,
+                output_path = reprojected_dir,
+                apply_sip_reference_img = reference_apply_sip,
+                apply_sip_img_to_reproject = img_to_reproject_apply_sip
+            )
+        reprojected_dir_gal = reprojected_dir / galaxy
+        shutil.copy2(reference_fits, reprojected_dir_gal)
+        print(f'\n\tCopied master FITS file: {reprojected_dir_gal / reference_fits}\n')
+        
         # print(conv_img_files) # debugging
         # print(master_dest_path) # debugging
 

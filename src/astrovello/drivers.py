@@ -60,6 +60,10 @@ class BASE_Driver:
         raw_scale = self.get_pixel_scale(filter_name)
         return raw_scale / self.get_binned_factor
 
+    @property
+    def get_sip(self) -> bool:
+        return self.config.get("apply_sip_correction", False)
+
     def convolve(self, img_data: np.ndarray, kernel: np.ndarray, kernel_size: int) -> np.ndarray:
         raise NotImplementedError(f"{self.__class__.__name__} must implement convolve().")
 

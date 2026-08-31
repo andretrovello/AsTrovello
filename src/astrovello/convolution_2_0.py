@@ -312,7 +312,7 @@ def diagnose_negatives(convolved_img, img_data, filt, survey, driver):
     print(50*'-')
 
 def create_convolvedFITS(original_fits: Path, kernel_fits: Path, 
-                         survey: str, psf_master_name: str,
+                         survey: str, psf_master_name: str, master_survey: str,
                          output_dir: Path, drivers: dict, 
                          force:bool = False) -> Path:
     
@@ -322,7 +322,7 @@ def create_convolvedFITS(original_fits: Path, kernel_fits: Path,
     filt = driver.get_sci_filter_name(original_file_name)
 
     output_path = output_dir / gal_name
-    out_file = output_path / f'{gal_name}_{filt}_to_{psf_master_name}_convolved.fits'
+    out_file = output_path / f'{gal_name}_{survey.lower()}_{filt}_to_{master_survey.lower()}_{psf_master_name}_convolved.fits'
 
     if out_file.exists() and not force:
         print(f">>> Already convolved, skipping: {out_file.name}")
