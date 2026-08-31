@@ -203,13 +203,15 @@ def main():
             survey = fftconvolve_dict[key]['survey']
 
             # Run the convolution (FFT based)
-            create_convolvedFITS(
-                original_fits, kernel_fits,
+            convolved_file_path = create_convolvedFITS(
+                original_fits = original_fits, kernel_fits = kernel_fits,
                 survey = survey, psf_master_name = psf_master_name,
                 output_dir = convolved_fits_path,
-                drivers = DRIVERS, gal_name_return = True,
+                drivers = DRIVERS,
                 force = True
             )
+
+            fftconvolve_dict[key]["convolved_file_path"] = convolved_file_path
 
         # Handle the Master image (it doesn't need convolution, just a copy to the final folder)
         img_by_filter = {}
@@ -222,19 +224,23 @@ def main():
         master_survey = img_by_filter[psf_master_name]['survey']
         master_img_path = img_by_filter[psf_master_name]['path']
 
-        master_dest_path = convolved_fits_path / args.galaxy / f'{args.galaxy}_{master_survey}_{psf_master_name}_master.fits'
+        master_dest_path = convolved_fits_path / galaxy / f'{galaxy}_{psf_master_name}_master.fits'
         shutil.copy2(master_img_path, master_dest_path)
 
         print(100 * '#')
         print(f'Master file {psf_master_name} from {master_survey} survey:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
-
-# -------------------------------------------------------------------------------------------------------------------------
-# ----------------------------------------------- FITS unit conversion-----------------------------------------------------
-            
             
     # # =================================================================================================
     # # ====================================== ALINGMENT ALGORITHM ====================================== 
-    # if args.mode == 'full' or args.mode == 'alignment_only':
+    if args.mode == 'full' or args.mode == 'alignment_only':
+        print(">>> Initiating image alignment process...")
+        conv_file_pattern = f"*{galaxy}_*_to_{psf_master_name}_convolved.fits" 
+        galaxy_convolved_fits_path = convolved_fits_path / galaxy
+        conv_img_files = list(galaxy_convolved_fits_path.glob(conv_file_pattern))
+        if args.mode == "alignment_only":
+            master_dest_path = galaxy_convolved_fits_path / f'{args.galaxy}_{psf_master_name}_master.fits'
+        # print(conv_img_files) # debugging
+        # print(master_dest_path) # debugging
 
     # # =================================================================================================
     # # ====================================== DATA CUBE ALGORITHM ====================================== 

@@ -311,20 +311,22 @@ def diagnose_negatives(convolved_img, img_data, filt, survey, driver):
     print(f"Negatives within 1-sigma of noise: {np.sum(convolved_img < -1*noise)}")
     print(50*'-')
 
-def create_convolvedFITS(original_fits, kernel_fits, survey, psf_master_name, output_dir, drivers, force=False, gal_name_return=False):
+def create_convolvedFITS(original_fits: Path, kernel_fits: Path, 
+                         survey: str, psf_master_name: str,
+                         output_dir: Path, drivers: dict, 
+                         force:bool = False) -> Path:
+    
     driver = drivers[survey]
     original_file_name = original_fits.name if hasattr(original_fits, 'name') else os.path.basename(original_fits)
     gal_name = driver.get_galaxy_name(original_file_name)
     filt = driver.get_sci_filter_name(original_file_name)
 
     output_path = output_dir / gal_name
-    out_file = output_path / f'{gal_name}_{survey}_{filt}_to_{psf_master_name}_convolved.fits'
+    out_file = output_path / f'{gal_name}_{filt}_to_{psf_master_name}_convolved.fits'
 
     if out_file.exists() and not force:
-        print(f"==> Already convolved, skipping: {out_file.name}")
-        if gal_name_return:
-            return gal_name
-        return
+        print(f">>> Already convolved, skipping: {out_file.name}")
+        return out_file
 
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -344,13 +346,12 @@ def create_convolvedFITS(original_fits, kernel_fits, survey, psf_master_name, ou
     n_neg_before = np.sum(img_data < 0)
     n_neg_after  = np.sum(convolved_img < 0)
     if n_neg_after > n_neg_before * 1.5:
-        print(f"WARNING: Convolution increased negative pixels in {filt}!")
+        print(f">>> WARNING: Convolution increased negative pixels in {filt}!")
         diagnose_negatives(convolved_img, img_data, filt, survey, driver)
 
     convolved_fits = fits.PrimaryHDU(data=convolved_img, header=img_header)
-    print(100*'#' + f'\nConvolving {filt} filter from {survey} survey:')
+    print(200*'-' + f'\n>>> Convolving {filt} filter from {survey} survey:')
     convolved_fits.writeto(out_file, overwrite=True)
-    print(f'\tConvolved FITS saved to: {out_file}\n' + 100*'#')
+    print(f'\tConvolved FITS saved to: {out_file}\n' + 100*'-')
 
-    if gal_name_return:
-        return gal_name
+    return out_file

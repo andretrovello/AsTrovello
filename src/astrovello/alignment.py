@@ -61,7 +61,7 @@ def S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path, error
     output_path = os.path.expanduser(output_path)
     output_directory = os.path.join(output_path, galaxy_name)
     if not os.path.exists(output_directory):
-        os.makedirs(output_directory, exist_ok=True)
+        os.makedirs(output_directory, exist_ok = True)
         print(f"==> Directory created: {output_directory}")
 
     if error:
