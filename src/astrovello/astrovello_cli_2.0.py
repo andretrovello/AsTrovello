@@ -112,8 +112,8 @@ def main():
         current_img_files = DRIVERS[survey].get_files(dir_path = img_dir, mode = "sci")
         current_psf_files = DRIVERS[survey].get_files(dir_path = psf_dir, mode = "psf")
         
-        img_files = img_files + current_img_files
-        psf_files = psf_files + current_psf_files
+        img_files.extend(current_img_files)
+        psf_files.extend(current_psf_files)
     # ----------------- Calculate Survey Resolutions -----------------
     # print(len(img_files))
     # print(len(psf_files))
@@ -262,7 +262,7 @@ def main():
             )
         reprojected_dir_gal = reprojected_dir / galaxy
         shutil.copy2(reference_fits, reprojected_dir_gal)
-        print(f'\n\tCopied master FITS file: {reprojected_dir_gal / reference_fits}\n')
+        print(f'\n\tCopied master fFITS file: {reprojected_dir_gal / reference_fits}\n')
         
         # print(conv_img_files) # debugging
         # print(master_dest_path) # debugging
