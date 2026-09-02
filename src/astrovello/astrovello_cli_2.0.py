@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--error', action='store_true', help='If set, creates error cube')
     parser.add_argument('--valid_pixels_cut', action='store_true', help='If set, cuts image only in a central radius where flux > 0 and not NaN')
     parser.add_argument('--force_convolution', action='store_true', help='If set, forces convolution, even if convolved files already exist')
+    parser.add_argument('--deactivate_alignment_log', action='store_false', help='If set, deactivates logs from alignment module')
 
     # --- Parse arguments ---
     args = parser.parse_args()
@@ -209,7 +210,7 @@ def main():
         fftconvolve_dict = convolved_dict(
             img_files = img_files,
             kernel_files = kernel_files,
-            drivers=DRIVERS,
+            drivers = DRIVERS,
         )
 
         # print(fftconvolve_dict)
@@ -233,39 +234,70 @@ def main():
         master_dest_path = convolved_fits_dir / galaxy / f'{galaxy}_{master_survey.lower()}_{psf_master_name}_master.fits'
         shutil.copy2(master_img_path, master_dest_path)
 
-        print(100 * '#')
-        print(f'Master file {psf_master_name} from {master_survey} survey:\nFITS saved to: {master_dest_path}\n' + 100 * '#')
+        print(200 * '-')
+        print(f'>>> Master file {psf_master_name} from {master_survey} survey:\n\tFITS saved to: {master_dest_path}\n' + 100 * '#')
             
-    # # =================================================================================================
-    # # ====================================== ALINGMENT ALGORITHM ====================================== 
-    if args.mode == 'full' or args.mode == 'alignment_only':
+# =================================================================================================
+# ====================================== ALIGNMENT ALGORITHM ====================================== 
+    if args.mode in ('full', 'alignment_only'):
         print(">>> Initiating image alignment process...")
-        convolved_files_dict = discover_convolved_files(convolved_fits_dir, galaxy)
-        reference_entry = next(v for v in convolved_files_dict.values() if v['is_master'])
-        reference_fits = reference_entry['path']
+        # print(psf_master_name) # debugging
+        # target_master_filter garante o filtro de menor resolução calculado no início
+        convolved_files_dict = discover_convolved_files(
+            convolved_dir = convolved_fits_dir,
+            galaxy = galaxy,
+            target_master_filter = psf_master_name,
+            selected_surveys = input_survey_list
+        )
 
-        ref_driver = DRIVERS[reference_entry["survey"]]
+        # print(convolved_files_dict) # debugging
+
+        # Como a função filtrou, haverá exatamente 1 master no dicionário
+        ref_filter, reference_entry = next(
+            (f, v) for f, v in convolved_files_dict.items() if v['is_master']
+        )
+        reference_fits = reference_entry['path']
+        reference_survey = reference_entry["survey"]
+
+        ref_driver = DRIVERS[reference_survey.upper()]
         reference_apply_sip = ref_driver.get_sip
+
+        print(f">>> Aligning against chosen master: {reference_fits.name} (Filter: {ref_filter})")
+
+        # Filtros válidos da entrada do usuário
+        user_input_filters = set(img_by_filter.keys()) if 'img_by_filter' in locals() else None
 
         for filt, entry in convolved_files_dict.items():
             if entry['is_master']:
                 continue
 
-            img_driver = DRIVERS[entry['survey']]
+            # Garante que só reprojeta os filtros da rodada atual
+            if user_input_filters is not None and filt not in user_input_filters:
+                continue
+
+            img_fits = entry["path"]
+            img_driver = DRIVERS[entry['survey'].upper()]
             img_to_reproject_apply_sip = img_driver.get_sip
+
             reproject_to_reference(
-                img_to_reproject = entry['path'],
+                img_to_reproject = img_fits,
+                img_survey = entry["survey"],
+                img_filter = filt,
                 reference_img = reference_fits,
+                ref_survey = reference_survey,
+                ref_filter = ref_filter,
+                galaxy = galaxy,
                 output_path = reprojected_dir,
                 apply_sip_reference_img = reference_apply_sip,
-                apply_sip_img_to_reproject = img_to_reproject_apply_sip
+                apply_sip_img_to_reproject = img_to_reproject_apply_sip,
+                verbose = args.deactivate_alignment_log
             )
+
+        # Copia o master selecionado para o diretório final de reprojeções
         reprojected_dir_gal = reprojected_dir / galaxy
+        reprojected_dir_gal.mkdir(parents = True, exist_ok = True)
         shutil.copy2(reference_fits, reprojected_dir_gal)
-        print(f'\n\tCopied master fFITS file: {reprojected_dir_gal / reference_fits}\n')
-        
-        # print(conv_img_files) # debugging
-        # print(master_dest_path) # debugging
+        print(f'\tCopied master FITS file: {reprojected_dir_gal / reference_fits.name}\n')
 
     # # =================================================================================================
     # # ====================================== DATA CUBE ALGORITHM ====================================== 

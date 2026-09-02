@@ -241,8 +241,8 @@ def convolved_dict(img_files: list, kernel_files: list, drivers: dict) -> dict:
     """
     conv_dict = {}
     for img_path in img_files:
-        survey = drivers["BASE"].get_survey(file_path=img_path)
-        filt = drivers[survey].get_sci_filter_name(filename=str(img_path))
+        survey = drivers["BASE"].get_survey(file_path = img_path)
+        filt = drivers[survey].get_sci_filter_name(filename = str(img_path))
         conv_dict.setdefault(filt, {})['img'] = img_path
         conv_dict.setdefault(filt, {})['survey'] = survey   
 
