@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from astropy.units import Jansky
 import numpy as np
 import pandas as pd
 from astropy.io import fits
@@ -36,7 +37,7 @@ def main():
     parser.add_argument('--error', action='store_true', help='If set, creates error cube')
     parser.add_argument('--valid_pixels_cut', action='store_true', help='If set, cuts image only in a central radius where flux > 0 and not NaN')
     parser.add_argument('--force_convolution', action='store_true', help='If set, forces convolution, even if convolved files already exist')
-    parser.add_argument('--deactivate_alignment_log', action='store_false', help='If set, deactivates logs from alignment module')
+    parser.add_argument('--quiet', action='store_true', help='Suppress alignment logs')
 
     # --- Parse arguments ---
     args = parser.parse_args()
@@ -237,8 +238,8 @@ def main():
         print(200 * '-')
         print(f'>>> Master file {psf_master_name} from {master_survey} survey:\n\tFITS saved to: {master_dest_path}\n' + 100 * '#')
             
-# =================================================================================================
-# ====================================== ALIGNMENT ALGORITHM ====================================== 
+    # =================================================================================================
+    # ====================================== ALIGNMENT ALGORITHM ====================================== 
     if args.mode in ('full', 'alignment_only'):
         print(">>> Initiating image alignment process...")
         # print(psf_master_name) # debugging
@@ -267,6 +268,7 @@ def main():
         # Filtros válidos da entrada do usuário
         user_input_filters = set(img_by_filter.keys()) if 'img_by_filter' in locals() else None
 
+        files_to_convert = []
         for filt, entry in convolved_files_dict.items():
             if entry['is_master']:
                 continue
@@ -276,10 +278,10 @@ def main():
                 continue
 
             img_fits = entry["path"]
-            img_driver = DRIVERS[entry['survey'].upper()]
+            img_driver = DRIVERS[entry['survey']]
             img_to_reproject_apply_sip = img_driver.get_sip
 
-            reproject_to_reference(
+            output_filename = reproject_to_reference(
                 img_to_reproject = img_fits,
                 img_survey = entry["survey"],
                 img_filter = filt,
@@ -290,17 +292,26 @@ def main():
                 output_path = reprojected_dir,
                 apply_sip_reference_img = reference_apply_sip,
                 apply_sip_img_to_reproject = img_to_reproject_apply_sip,
-                verbose = args.deactivate_alignment_log
+                verbose = not args.quiet
             )
 
+            files_to_convert.append(output_filename)
         # Copia o master selecionado para o diretório final de reprojeções
         reprojected_dir_gal = reprojected_dir / galaxy
-        reprojected_dir_gal.mkdir(parents = True, exist_ok = True)
-        shutil.copy2(reference_fits, reprojected_dir_gal)
-        print(f'\tCopied master FITS file: {reprojected_dir_gal / reference_fits.name}\n')
+        reprojected_dir_gal.mkdir(parents=True, exist_ok=True)
+        master_reprojected_path = reprojected_dir_gal / reference_fits.name
+        shutil.copy2(reference_fits, master_reprojected_path)
+        print(f'\tCopied master FITS file: {master_reprojected_path}\n')
+        files_to_convert.append(master_reprojected_path)
 
-    # # =================================================================================================
-    # # ====================================== DATA CUBE ALGORITHM ====================================== 
+        # =================================================================================================
+        # ======================================== UNIT CONVERSION ======================================== 
+        print(">>> Converting units to Jansky (Jy)...")
+        # print(files_to_convert) # debugging
+
+
+    # =================================================================================================
+    # ====================================== DATA CUBE ALGORITHM ====================================== 
     # if args.mode == 'full' or args.mode == 'alignment_only':
 
 

@@ -1,9 +1,7 @@
-import os 
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
 from pathlib import Path
-import logging
 # ----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------------- Image alignment -------------------------------------------------------
 
@@ -23,7 +21,7 @@ def discover_convolved_files(
         raise FileNotFoundError(f"No convolved files found for galaxy '{galaxy}' at {gal_dir}")
 
     result = {}
-    target_surveys = {s for s in selected_surveys} if selected_surveys else None
+    target_surveys = {s.upper() for s in selected_surveys} if selected_surveys else None
 
     # Busca os arquivos master
     master_files = list(gal_dir.glob('*_master.fits'))
@@ -33,14 +31,13 @@ def discover_convolved_files(
     matched_master = None
     for f in master_files:
         _, survey, filt, _ = f.stem.split('_')
-        
-        # Se um filtro master específico foi solicitado, ignora os outros
+        survey = survey.upper()  
+
         if target_master_filter is not None:
             if filt == target_master_filter:
                 matched_master = (f, survey, filt)
                 break
         else:
-            # Fallback caso target_master_filter não seja passado
             matched_master = (f, survey, filt)
             break
 
@@ -55,17 +52,14 @@ def discover_convolved_files(
 
     # Busca os arquivos convoluídos que batem com o survey e com o master correto
     for f in gal_dir.glob('*_convolved.fits'):
-        # Nome padrão: {gal}_{survey}_{filt}_to_{master_survey}_{master_filt}_convolved.fits
         parts = f.stem.split('_')
-        survey = parts[1]
+        survey = parts[1].upper()   
         filt = parts[2]
         conv_to_master = parts[5] if len(parts) >= 6 else None
 
-        # Filtra por survey selecionado
-        if target_surveys is not None and survey.upper() not in target_surveys:
+        if target_surveys is not None and survey not in target_surveys:
             continue
 
-        # Garante que o arquivo foi convoluído especificamente para o master atual
         if target_master_filter is not None and conv_to_master is not None:
             if conv_to_master != target_master_filter:
                 continue
@@ -135,10 +129,12 @@ def reproject_to_reference(
 
     # Gravação do arquivo de saída
     output_directory = Path(output_path) / galaxy
-    output_directory.mkdir(parents=True, exist_ok=True)
-
+    output_directory.mkdir(parents = True, exist_ok=True)
     output_name = f'{galaxy}_{img_survey}_{img_filter}_on_{ref_survey}_{ref_filter}_projection.fits'
-    fits.writeto(output_directory / output_name, array, img_base_new_header, overwrite=True)
+    output_filename = output_directory / output_name
+    fits.writeto(output_filename, array, img_base_new_header, overwrite=True)
 
     if verbose:
         print(f'\tReprojected FITS file: {output_name}\n')
+
+    return output_filename

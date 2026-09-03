@@ -95,7 +95,10 @@ SURVEY_CONFIG = {
                         "force_tan_sip": False,
                         "sci_glob": "*_exp-drc-sci.fits",
                         "psf_glob": "*PSFSTD*.fits", 
-                        "apply_sip_correction": False                    },
+                        "apply_sip_correction": False,
+                        "sci_unit": "Jy/px",
+                        "err_unit": "UNITLESS"              
+                    },
                     "S4G":
                     {
                         "TELESCOP": "Spitzer",
@@ -110,6 +113,8 @@ SURVEY_CONFIG = {
                         "foscian_sip": True,
                         "sci_glob": "*.phot.*.fits",
                         "psf_glob": "*_col129_row129.fits",
-                        "apply_sip_correction": True
+                        "apply_sip_correction": True,
+                        "sci_unit": "MJy/sr",
+                        "err_unit": "UNITLESS"   
                     }
                 }
