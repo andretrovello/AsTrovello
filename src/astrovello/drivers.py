@@ -73,6 +73,51 @@ class BASE_Driver:
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_invalid_mask().")
 
+    def convert2Jansky(fits_file: Path) -> No:
+        """
+        Converts image units to Jansky per pixel.
+        Handles HST flux/error maps and Spitzer flux/error maps.
+        Recovers missing photometric keywords dynamically.
+        """
+        with fits.open(fits_file) as hdu:
+            data, header = hdu[0].data, hdu[0].header
+        
+        new_data, new_header = data.copy(), header.copy()
+        filename_str = fits_file.name
+
+        # --- Subfunção para resgatar o PHOTFNU perdido do AstroDrizzle ---
+        def get_photfnu(hdr):
+            if 'PHOTFNU' in hdr:
+                return hdr['PHOTFNU']
+            elif 'PHOTFLAM' in hdr:
+                filt = hdr.get('FILTER', '').strip().upper()
+                # Comprimentos de onda pivô (Angstroms) para os filtros do PHANGS-HST
+                if filt in pivots:
+                    # Calcula PHOTFNU a partir do PHOTFLAM
+                    return 3.34e4 * hdr['PHOTFLAM'] * (pivots[filt]**2)
+                else:
+                    raise KeyError(f"PHOTFNU missing and pivot wavelength unknown for filter '{filt}'.")
+            else:
+                raise KeyError("Header missing photometric keywords (PHOTFNU/PHOTFLAM).")
+
+    # ---------------------------------------------------------
+    # 1. HST Case: Flux maps OR Convolved Error maps (Sigma)
+    # ---------------------------------------------------------
+    if 'phangs' in filename_str:
+        # Flux data
+        if header.get('BUNIT') == 'ELECTRONS/S':
+            # PHOTFNU is the photometric flux density (Jy*s/e-)
+            new_data *= header['PHOTFNU']
+            new_header['BUNIT'] = 'Jy/pixel'
+            print(f"HST: Converted {filename_str} using PHOTFNU.")
+
+        # Error data
+        elif header.get('BUNIT') == 'UNITLESS':
+            photfnu = get_photfnu(header)
+            new_data *= photfnu
+            new_header['BUNIT'] = 'Jy/pixel'
+            print(f"HST Error Map: Converted {filename_str} using PHOTFNU.")
+
 # ================================= PHANGS Class =================================
 class PHANGS_Driver(BASE_Driver):
     """Herda get_files e get_pixel_scale de BaseDriver."""
@@ -121,6 +166,15 @@ class PHANGS_Driver(BASE_Driver):
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         return img_data == 0
 
+    def convert2Jansky(fits_header) -> tuple:
+        if fits_header.get('BUNIT') == 'ELECTRONS/S':
+            # PHOTFNU is the photometric flux density (Jy*s/e-)
+            new_data *= fits_header['PHOTFNU']
+            new_fits_header['BUNIT'] = 'Jy/pixel'
+            print(f"HST: Converted {filename_str} using PHOTFNU.")
+            return new_data, new_header
+        
+
 # ================================= S4G Class =================================
 class S4G_Driver(BASE_Driver):
     def get_psf_filter_name(self, filename: str) -> str:
@@ -157,3 +211,4 @@ class S4G_Driver(BASE_Driver):
     
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         return np.isnan(img_data)
+    def unit_conversion(self, )

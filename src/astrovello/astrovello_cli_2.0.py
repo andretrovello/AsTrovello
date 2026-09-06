@@ -307,7 +307,10 @@ def main():
         # =================================================================================================
         # ======================================== UNIT CONVERSION ======================================== 
         print(">>> Converting units to Jansky (Jy)...")
-        # print(files_to_convert) # debugging
+        print(files_to_convert) # debugging
+        for file in files_to_convert:
+            current_survey = file.name.split("_")[1].upper()
+            print(current_survey)
 
 
     # =================================================================================================

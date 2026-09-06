@@ -130,7 +130,7 @@ def reproject_to_reference(
     # Gravação do arquivo de saída
     output_directory = Path(output_path) / galaxy
     output_directory.mkdir(parents = True, exist_ok=True)
-    output_name = f'{galaxy}_{img_survey}_{img_filter}_on_{ref_survey}_{ref_filter}_projection.fits'
+    output_name = f'{galaxy}_{img_survey.lower()}_{img_filter}_on_{ref_survey.lower()}_{ref_filter}_projection.fits'
     output_filename = output_directory / output_name
     fits.writeto(output_filename, array, img_base_new_header, overwrite=True)
 

@@ -96,7 +96,7 @@ SURVEY_CONFIG = {
                         "sci_glob": "*_exp-drc-sci.fits",
                         "psf_glob": "*PSFSTD*.fits", 
                         "apply_sip_correction": False,
-                        "sci_unit": "Jy/px",
+                        "sci_unit": "ELECTRONS/S",
                         "err_unit": "UNITLESS"              
                     },
                     "S4G":
