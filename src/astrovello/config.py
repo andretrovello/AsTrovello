@@ -91,7 +91,6 @@ SURVEY_CONFIG = {
                         "INSTRUME": "WFC3",
                         "pixel_scale_arcsec": 0.0395,
                         "binned_factor": 4,
-                        "unit_type": "electrons/s", # usado em units.py
                         "force_tan_sip": False,
                         "sci_glob": "*_exp-drc-sci.fits",
                         "psf_glob": "*PSFSTD*.fits", 
@@ -109,7 +108,6 @@ SURVEY_CONFIG = {
                             2: 1.223 # Channel 2
                         },
                         "binned_factor": 5,
-                        "unit_type": "mjy/sr", # usado em units.py
                         "foscian_sip": True,
                         "sci_glob": "*.phot.*.fits",
                         "psf_glob": "*_col129_row129.fits",

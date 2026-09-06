@@ -25,6 +25,7 @@ from alignment_2_0 import (
     discover_convolved_files,
     reproject_to_reference
 )
+from units_2_0 import convert2Jansky
 
 def main():
     parser = argparse.ArgumentParser('AsTrovello Pipeline Control')
@@ -273,7 +274,6 @@ def main():
             if entry['is_master']:
                 continue
 
-            # Garante que só reprojeta os filtros da rodada atual
             if user_input_filters is not None and filt not in user_input_filters:
                 continue
 
@@ -295,23 +295,43 @@ def main():
                 verbose = not args.quiet
             )
 
-            files_to_convert.append(output_filename)
-        # Copia o master selecionado para o diretório final de reprojeções
+            files_to_convert.append({'path': output_filename, 'survey': entry['survey']})   # <- dict aqui dentro do loop
+
+        # Copia (e normaliza) o master selecionado para o diretório final de reprojeções
         reprojected_dir_gal = reprojected_dir / galaxy
         reprojected_dir_gal.mkdir(parents=True, exist_ok=True)
         master_reprojected_path = reprojected_dir_gal / reference_fits.name
-        shutil.copy2(reference_fits, master_reprojected_path)
-        print(f'\tCopied master FITS file: {master_reprojected_path}\n')
-        files_to_convert.append(master_reprojected_path)
 
+        with fits.open(reference_fits) as hdu_ref:
+            master_data = hdu_ref[0].data
+            master_header = hdu_ref[0].header.copy()
+
+        if reference_apply_sip:
+            master_header['CTYPE1'] = 'RA---TAN-SIP'
+            master_header['CTYPE2'] = 'DEC--TAN-SIP'
+
+        fits.writeto(master_reprojected_path, master_data, master_header, overwrite=True)
+        print(f'\tCopied master FITS file: {master_reprojected_path}\n')
+        files_to_convert.append({'path': master_reprojected_path, 'survey': reference_survey})
         # =================================================================================================
         # ======================================== UNIT CONVERSION ======================================== 
         print(">>> Converting units to Jansky (Jy)...")
-        print(files_to_convert) # debugging
-        for file in files_to_convert:
-            current_survey = file.name.split("_")[1].upper()
-            print(current_survey)
+        for item in files_to_convert:
+            driver = DRIVERS[item['survey']]
+            print(f"\tFile: {item['path']}")
 
+            converted_data, converted_header = convert2Jansky(item['path'], driver)
+
+            if converted_header.get('BUNIT') != 'Jy/pixel':
+                print(f"\t==> WARNING: {item['path'].name} was NOT converted to Jy/pixel "
+                    f"(BUNIT is still '{converted_header.get('BUNIT')}'). Skipping save.")
+                continue
+
+            new_hdu = fits.PrimaryHDU(converted_data, converted_header)
+            file_path = item['path'].parent / f"{item['path'].stem}_Jy_per_pixel{item['path'].suffix}"
+            new_hdu.writeto(file_path, overwrite=True)
+            print(f'\tSaved: {file_path}')
+            print("\t" + 100 * "-")
 
     # =================================================================================================
     # ====================================== DATA CUBE ALGORITHM ====================================== 

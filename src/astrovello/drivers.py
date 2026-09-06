@@ -19,6 +19,9 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import label, binary_dilation
 from astropy.convolution import convolve_fft
+from astropy.wcs.utils import proj_plane_pixel_area
+from astropy.wcs import WCS
+from astropy.io import fits
 
 # ================================= Base Class =================================
 class BASE_Driver:
@@ -73,50 +76,8 @@ class BASE_Driver:
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_invalid_mask().")
 
-    def convert2Jansky(fits_file: Path) -> No:
-        """
-        Converts image units to Jansky per pixel.
-        Handles HST flux/error maps and Spitzer flux/error maps.
-        Recovers missing photometric keywords dynamically.
-        """
-        with fits.open(fits_file) as hdu:
-            data, header = hdu[0].data, hdu[0].header
-        
-        new_data, new_header = data.copy(), header.copy()
-        filename_str = fits_file.name
-
-        # --- Subfunção para resgatar o PHOTFNU perdido do AstroDrizzle ---
-        def get_photfnu(hdr):
-            if 'PHOTFNU' in hdr:
-                return hdr['PHOTFNU']
-            elif 'PHOTFLAM' in hdr:
-                filt = hdr.get('FILTER', '').strip().upper()
-                # Comprimentos de onda pivô (Angstroms) para os filtros do PHANGS-HST
-                if filt in pivots:
-                    # Calcula PHOTFNU a partir do PHOTFLAM
-                    return 3.34e4 * hdr['PHOTFLAM'] * (pivots[filt]**2)
-                else:
-                    raise KeyError(f"PHOTFNU missing and pivot wavelength unknown for filter '{filt}'.")
-            else:
-                raise KeyError("Header missing photometric keywords (PHOTFNU/PHOTFLAM).")
-
-    # ---------------------------------------------------------
-    # 1. HST Case: Flux maps OR Convolved Error maps (Sigma)
-    # ---------------------------------------------------------
-    if 'phangs' in filename_str:
-        # Flux data
-        if header.get('BUNIT') == 'ELECTRONS/S':
-            # PHOTFNU is the photometric flux density (Jy*s/e-)
-            new_data *= header['PHOTFNU']
-            new_header['BUNIT'] = 'Jy/pixel'
-            print(f"HST: Converted {filename_str} using PHOTFNU.")
-
-        # Error data
-        elif header.get('BUNIT') == 'UNITLESS':
-            photfnu = get_photfnu(header)
-            new_data *= photfnu
-            new_header['BUNIT'] = 'Jy/pixel'
-            print(f"HST Error Map: Converted {filename_str} using PHOTFNU.")
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement convert2Jansky().")
 
 # ================================= PHANGS Class =================================
 class PHANGS_Driver(BASE_Driver):
@@ -166,15 +127,19 @@ class PHANGS_Driver(BASE_Driver):
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         return img_data == 0
 
-    def convert2Jansky(fits_header) -> tuple:
-        if fits_header.get('BUNIT') == 'ELECTRONS/S':
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        new_header = fits_header.copy()
+        new_data = fits_data.copy()
+        survey_unit = self.config["sci_unit"]
+        if fits_header.get('BUNIT') == survey_unit:
             # PHOTFNU is the photometric flux density (Jy*s/e-)
             new_data *= fits_header['PHOTFNU']
-            new_fits_header['BUNIT'] = 'Jy/pixel'
-            print(f"HST: Converted {filename_str} using PHOTFNU.")
+            new_header['BUNIT'] = 'Jy/pixel'
+            print("\t\tPHANGS-HST: Converted using PHOTFNU.")
             return new_data, new_header
-        
-
+        else: 
+            print(f"\t\tUnit info is different than PHANGS-HST standard ({survey_unit}). Please check respective header. Returning original data.")
+            return fits_data, fits_header
 # ================================= S4G Class =================================
 class S4G_Driver(BASE_Driver):
     def get_psf_filter_name(self, filename: str) -> str:
@@ -211,4 +176,22 @@ class S4G_Driver(BASE_Driver):
     
     def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
         return np.isnan(img_data)
-    def unit_conversion(self, )
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        new_header = fits_header.copy()
+        new_data = fits_data.copy()
+        survey_unit = self.config["sci_unit"]
+        if fits_header.get('BUNIT') == 'MJy/sr': 
+            w = WCS(fits_header)
+            pixel_area_deg2 = proj_plane_pixel_area(w)
+            pixel_area_sr = pixel_area_deg2 * (np.pi / 180)**2
+            
+            new_data = new_data * 1e6 * pixel_area_sr
+            new_header['BUNIT'] = 'Jy/pixel'
+            
+            pixel_area_arcsec2 = pixel_area_deg2 * (3600**2)
+            print(f"\t\tS4G: Converted using true WCS area ({pixel_area_arcsec2:.4f} arcsec2/px).")
+            return new_data, new_header
+        else: 
+            print(f"\t\tUnit info is different than S4G standard ({survey_unit}). Please check respective header. Returning original data.")
+            return fits_data, fits_header
