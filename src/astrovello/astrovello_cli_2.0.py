@@ -21,11 +21,19 @@ from convolution_2_0 import (
     diagnose_negatives,
     create_convolvedFITS,
 )
+
 from alignment_2_0 import (
     discover_convolved_files,
     reproject_to_reference
 )
+
 from units_2_0 import convert2Jansky
+
+from cube_2_0 import (
+    create_data_cube,
+    discover_jansky_files
+)
+from utils_2_0 import sort_filters_by_wavelength
 
 def main():
     parser = argparse.ArgumentParser('AsTrovello Pipeline Control')
@@ -335,9 +343,44 @@ def main():
 
     # =================================================================================================
     # ====================================== DATA CUBE ALGORITHM ====================================== 
-    # if args.mode == 'full' or args.mode == 'alignment_only':
+    if args.mode == 'full' or args.mode == 'cube_only':
 
+        print(">>> Initiating data cube creation...")
+        jansky_files_dict = discover_jansky_files(
+            reprojected_dir = reprojected_dir,
+            galaxy = galaxy,
+            target_master_filter = psf_master_name,
+            selected_surveys = input_survey_list,
+        )
 
+        ordered_filters = sort_filters_by_wavelength(jansky_files_dict)
+        print(f">>> Filters ordered by wavelength (UV -> IR): {ordered_filters}")
 
+        # --- Chamada da função que cria o cubo final ---
+# --- Chamada da função que cria o cubo final ---
+        # Garante a pasta com o nome da galáxia em minúsculas (.lower())
+        cube_output_dir = output_dir / 'datacubes' / galaxy.lower()
+        cube_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Envia apenas o nome base para a função
+        cube_base_name = cube_output_dir / f"{galaxy.lower()}_datacube"
+        
+        reference_entry = next(v for v in jansky_files_dict.values() if v['is_master'])
+        reference_path = reference_entry['path']
+
+        cubo, header = create_data_cube(
+            jansky_files_dict = jansky_files_dict,
+            ordered_filters = ordered_filters,
+            reference_path = reference_path,
+            drivers = DRIVERS,
+            output_filename = cube_base_name,
+            apply_mask = args.apply_mask,
+            n_sigma = args.sigma,
+            padding = 50,
+            sky_subtraction = True
+        )
+        
+        print(200*'-' + "\n>>> DATACUBE COMPLETE\n" + 100*'#')
+        
 if __name__ == "__main__":
     main()

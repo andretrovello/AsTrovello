@@ -5,7 +5,6 @@ from astropy.io import fits
 from scipy.ndimage import center_of_mass
 from astropy.stats import sigma_clipped_stats
 
-
 # ----------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------- Data Cube creation-------------------------------------------------------
 

@@ -44,11 +44,11 @@ def create_mask(data, n_sigma=3):
     
     return subtracted_data, mask_res
 
-def mask_after_sky_sub(data, n_sigma=3):
+def mask_after_sky_sub(data, N_SIGMA = 3):
     """
     One-sided object mask (e.g., galaxy) post-sky subtraction.
     Estimates background noise via sigma-clipping (using the same criteria 
-    applied during sky level estimation) and masks pixels > n_sigma * noise.
+    applied during sky level estimation) and masks pixels > N_SIGMA   * noise.
     """
     valid = data[np.isfinite(data) & (data != 0)]
     if valid.size == 0:
@@ -56,6 +56,6 @@ def mask_after_sky_sub(data, n_sigma=3):
 
     # Sky-level sigma clipping: 3-sigma, 5 iterations
     _, sky_median, sky_std = sigma_clipped_stats(valid, sigma=3.0, maxiters=5)
-    threshold = sky_median + (n_sigma * sky_std)
+    threshold = sky_median + (N_SIGMA   * sky_std)
     # One-sided thresholding: only select pixels above the noise level
     return data > threshold
