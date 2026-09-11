@@ -70,13 +70,16 @@ psf_filename_parse : dict or None
 # ----------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------- Pivot wavelengths --------------------------------------------------
 PIVOT_WAVELENGTHS = {
+    # PHANGS-HST
     'f275w': 2707.19995,
     'f336w': 3354.84995,
     'f438w': 4325.55005,
     'f555w': 5305.94995,
     'f814w': 8048.1001,
+    # S4G
     'irac1': 35075.0,
     'irac2': 44366.0,
+    # PHANGS-JWST
     # 'jpas_j0378': ...,
 }
 
@@ -85,18 +88,31 @@ PIVOT_WAVELENGTHS = {
 # --------------------------------------------------- Survey registry --------------------------------------------------
 
 SURVEY_CONFIG = {
-                    "PHANGS": 
+                    "PHANGS-HST": 
                     {
                         "TELESCOP": "HST",
                         "INSTRUME": "WFC3",
                         "pixel_scale_arcsec": 0.0395,
                         "binned_factor": 4,
-                        "force_tan_sip": False,
                         "sci_glob": "*_exp-drc-sci.fits",
                         "psf_glob": "*PSFSTD*.fits", 
                         "apply_sip_correction": False,
                         "sci_unit": "ELECTRONS/S",
-                        "err_unit": "UNITLESS"              
+                        "err_unit": "UNITLESS",
+                        "convolution_bin_factor": 5         
+                    },
+                    "PHANGS-JWST": 
+                    {
+                        "TELESCOP": "JWST",
+                        "INSTRUME": "MIRI",
+                        "pixel_scale_arcsec": 0.1109,
+                        "binned_factor": 4,
+                        "sci_glob": "hlsp_phangs-jwst_jwst_*_v1p1_img.fits",
+                        "psf_glob": "*PSFSTD*.fits", 
+                        "apply_sip_correction": False,
+                        "sci_unit": "MJy/sr",
+                        "err_unit": "MJy/sr",
+                        "convolution_bin_factor": 5         
                     },
                     "S4G":
                     {
@@ -108,11 +124,11 @@ SURVEY_CONFIG = {
                             2: 1.223 # Channel 2
                         },
                         "binned_factor": 5,
-                        "foscian_sip": True,
                         "sci_glob": "*.phot.*.fits",
                         "psf_glob": "*_col129_row129.fits",
                         "apply_sip_correction": True,
                         "sci_unit": "MJy/sr",
-                        "err_unit": "UNITLESS"   
+                        "err_unit": "UNITLESS",
+                        "convolution_bin_factor": 1
                     }
                 }

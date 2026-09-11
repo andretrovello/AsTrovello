@@ -55,7 +55,7 @@ def sum_images(aligned_images, footprint_mask=None):
         res = data_clean if res is None else res + data_clean
     return res
 
-def mask_after_sky_sub(data, N_SIGMA=3):
+def mask_after_sky_sub(data, N_SIGMA = 3.0):
     valid = data[np.isfinite(data) & (data != 0)]
     if valid.size == 0:
         return np.zeros_like(data, dtype=bool)

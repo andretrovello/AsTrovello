@@ -78,7 +78,10 @@ class BASE_Driver:
 
     def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
         raise NotImplementedError(f"{self.__class__.__name__} must implement convert2Jansky().")
-
+    
+    @property
+    def get_convolution_bin_factor(self) -> int:
+        return int(self.config.get("convolution_bin_factor", 1))
 # ================================= PHANGS Class =================================
 class PHANGS_Driver(BASE_Driver):
     """Herda get_files e get_pixel_scale de BaseDriver."""
@@ -94,9 +97,9 @@ class PHANGS_Driver(BASE_Driver):
         gal_name = Path(filename).name.split('_')[4].lower()
         return gal_name.replace('mosaic', '')
 
-    def convolve(self, img_data: np.ndarray, kernel: np.ndarray, kernel_size: int) -> np.ndarray:
-        img_nan = img_data.copy().astype(float)
-        img_nan[img_data == 0] = np.nan
+    def convolve(self, img_data, kernel, kernel_size):
+        # o array ja chega com invalidos marcados como NaN (create_convolvedFITS)
+        img_nan  = img_data.astype(np.float32, copy=True)
         nan_mask = np.isnan(img_nan)
 
         border_seed = np.zeros_like(nan_mask)
@@ -129,15 +132,30 @@ class PHANGS_Driver(BASE_Driver):
 
     def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
         new_header = fits_header.copy()
-        new_data = fits_data.copy()
         survey_unit = self.config["sci_unit"]
+
         if fits_header.get('BUNIT') == survey_unit:
-            # PHOTFNU is the photometric flux density (Jy*s/e-)
-            new_data *= fits_header['PHOTFNU']
+            # PHOTFNU converte electrons/s -> Jy assumindo UM PIXEL NATIVO do
+            # PHANGS. Esse arquivo já pode ter sido reprojetado pra grade de
+            # outro survey (S4G) antes de chegar aqui — então não dá pra
+            # multiplicar direto, como se o pixel ainda fosse o nativo.
+            #
+            # Correção: primeiro obtém uma densidade de área genuína
+            # (Jy/arcsec², usando a área do pixel NATIVO), depois multiplica
+            # pela área real do pixel ATUAL do header — o mesmo esquema de
+            # duas etapas que o S4G já usa com MJy/sr, abaixo.
+            native_pixel_area_arcsec2 = self.config["pixel_scale_arcsec"] ** 2
+            surface_brightness = (fits_data * fits_header['PHOTFNU']) / native_pixel_area_arcsec2
+
+            w = WCS(fits_header)
+            pixel_area_arcsec2 = proj_plane_pixel_area(w) * 3600**2
+
+            new_data = surface_brightness * pixel_area_arcsec2
             new_header['BUNIT'] = 'Jy/pixel'
-            print("\t\tPHANGS-HST: Converted using PHOTFNU.")
+            print(f"\t\tPHANGS-HST: Converted using PHOTFNU, rescaled to actual pixel area "
+                f"({pixel_area_arcsec2:.6f} arcsec2/px).")
             return new_data, new_header
-        else: 
+        else:
             print(f"\t\tUnit info is different than PHANGS-HST standard ({survey_unit}). Please check respective header. Returning original data.")
             return fits_data, fits_header
 # ================================= S4G Class =================================
