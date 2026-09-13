@@ -82,9 +82,15 @@ class BASE_Driver:
     @property
     def get_convolution_bin_factor(self) -> int:
         return int(self.config.get("convolution_bin_factor", 1))
+
+    @property
+    def get_hdu_sci_position(self) -> int:
+        # Science-image HDU index. JWST mosaics use 1; most others use 0.
+        return int(self.config.get("hdu_sci_position", 0))
+    
 # ================================= PHANGS Class =================================
 class PHANGS_Driver(BASE_Driver):
-    """Herda get_files e get_pixel_scale de BaseDriver."""
+    """Inherits functions from BASE_Driver."""
     
     def get_psf_filter_name(self, filename: str) -> str:
         return Path(filename).name.replace('.fits', '').split('_')[-1].lower()
@@ -158,6 +164,100 @@ class PHANGS_Driver(BASE_Driver):
         else:
             print(f"\t\tUnit info is different than PHANGS-HST standard ({survey_unit}). Please check respective header. Returning original data.")
             return fits_data, fits_header
+
+# ================================= PHANGS Class =================================
+class PHANGS_JWST_Driver(BASE_Driver):
+    """Inherits functions from BaseDriver."""
+
+    def get_instrument_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        return Path(filename).name.replace('.fits', '').split('_')[3].lower()
+    
+    def get_psf_filter_name(self, filename: str) -> str:
+        return Path(filename).name.replace('.fits', '').split('_')[-1].lower()
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        return Path(filename).name.split('_')[5].lower()
+
+    def get_galaxy_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        gal_name = Path(filename).name.split('_')[4].lower()
+        return gal_name.replace('mosaic', '')
+
+    def get_pixel_scale(self, filter_name: str) -> float:
+        # Padrão genérico: se for um valor simples no dicionário, já resolve aqui no pai!
+        return self.config["pixel_scale_arcsec"][filter_name]
+
+    def convolve(self, img_data, kernel, kernel_size):
+        # o array ja chega com invalidos marcados como NaN (create_convolvedFITS)
+        img_nan  = img_data.astype(np.float32, copy=True)
+        nan_mask = np.isnan(img_nan)
+
+        border_seed = np.zeros_like(nan_mask)
+        border_seed[0, :]  = nan_mask[0, :]
+        border_seed[-1, :] = nan_mask[-1, :]
+        border_seed[:, 0]  = nan_mask[:, 0]
+        border_seed[:, -1] = nan_mask[:, -1]
+
+        labeled, _ = label(nan_mask)
+        border_labels = set(labeled[border_seed & nan_mask])
+        border_mask = np.isin(labeled, list(border_labels))
+
+        img_to_conv = img_nan.copy()
+        img_to_conv[border_mask] = 0.0
+
+        convolved_img = convolve_fft(
+            img_to_conv, kernel,
+            normalize_kernel=False, nan_treatment='interpolate',
+            preserve_nan=False, allow_huge=True,
+        )
+
+        structure = np.ones((kernel_size, kernel_size))
+        expanded_border = binary_dilation(border_mask, structure=structure)
+        convolved_img[expanded_border] = 0.0
+
+        return convolved_img
+    
+    def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
+        # PHANGS-JWST mosaics mark off-footprint pixels with exact 0, like HST
+        # (confirmed on the NGC 1087 MIRI mosaics: 0 NaN, ~1.5M exact zeros in
+        # the tilted-frame border). ~isfinite would leave those zeros in the
+        # convolution and contaminate the border. The `convolve` method below
+        # separates the border frame (flooded from the edge) from any genuine
+        # interior zeros, so == 0 here is safe.
+        return img_data == 0
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        # JWST (PHANGS-JWST) mosaics are in MJy/sr, a surface brightness -
+        # NOT electrons/s. The conversion is therefore identical to S4G's:
+        # multiply by the pixel solid angle read from the WCS. This is grid-
+        # independent, so it stays correct after the image is reprojected onto
+        # the master grid. Do NOT use PHOTFNU here (that is the HST route, and
+        # the JWST headers do not even carry that keyword).
+        new_header = fits_header.copy()
+        new_data = fits_data.copy()
+        survey_unit = self.config["sci_unit"]
+
+        if fits_header.get('BUNIT') == 'MJy/sr':
+            w = WCS(fits_header)
+            pixel_area_deg2 = proj_plane_pixel_area(w)
+            pixel_area_sr = pixel_area_deg2 * (np.pi / 180) ** 2
+
+            new_data = new_data * 1e6 * pixel_area_sr
+            new_header['BUNIT'] = 'Jy/pixel'
+
+            pixel_area_arcsec2 = pixel_area_deg2 * (3600 ** 2)
+            print(f"\t\tPHANGS-JWST: Converted from MJy/sr using true WCS area "
+                  f"({pixel_area_arcsec2:.4f} arcsec2/px).")
+            return new_data, new_header
+        else:
+            print(f"\t\tUnit info is different than PHANGS-JWST standard "
+                  f"({survey_unit}). Please check respective header. "
+                  f"Returning original data.")
+            return fits_data, fits_header
+
+
 # ================================= S4G Class =================================
 class S4G_Driver(BASE_Driver):
     def get_psf_filter_name(self, filename: str) -> str:

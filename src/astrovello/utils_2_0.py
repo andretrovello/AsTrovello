@@ -5,11 +5,11 @@ from astropy.io import fits
 import numpy as np
 import warnings
 
-def science_pixel_scale(sci_path) -> float:
+def science_pixel_scale(sci_path, hdu_ext = 0) -> float:
     """Escala de pixel da imagem de ciencia, em arcsec/px, lida do WCS."""
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        h = fits.getheader(sci_path)
+        h = fits.getheader(sci_path, ext = hdu_ext)
         return float(np.sqrt(proj_plane_pixel_area(WCS(h, naxis=2)) * 3600**2))
 
 def sort_filters_by_wavelength(jansky_files_dict: dict) -> list:

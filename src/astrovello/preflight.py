@@ -125,7 +125,8 @@ def _check_grids(img_files, drivers, survey_list, r80, fwhm_dict, bin_factors,
         if not survey_imgs:
             continue
 
-        native = science_pixel_scale(survey_imgs[0])
+        native = science_pixel_scale(
+            survey_imgs[0], hdu_ext=drivers[survey].get_hdu_sci_position)
         factor = bin_factors.get(survey, 1)
         grid = native * factor
 
@@ -184,7 +185,8 @@ def _estimate_cube_size(img_files, drivers, science_bands, master_survey,
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        header = fits.getheader(imgs[0])
+        header = fits.getheader(
+            imgs[0], ext=drivers[master_survey].get_hdu_sci_position)
 
     n_px = int(header.get('NAXIS1', 0)) * int(header.get('NAXIS2', 0))
     n_px //= max(bin_factors.get(master_survey, 1), 1) ** 2

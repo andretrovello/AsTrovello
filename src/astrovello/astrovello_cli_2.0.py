@@ -34,7 +34,12 @@ import pandas as pd
 from astropy.io import fits
 
 from config import SURVEY_CONFIG, PIVOT_WAVELENGTHS
-from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
+from drivers import (
+    BASE_Driver, 
+    PHANGS_Driver,
+    PHANGS_JWST_Driver, 
+    S4G_Driver
+)
 from convolution_2_0 import (
     calculateFWHM,
     calculate_half_light_radii,
@@ -118,7 +123,7 @@ def derive_bin_factors(img_files, drivers, survey_list, r80, fwhm_dict,
         if override:
             factors[survey] = int(override)
             continue
-        native = science_pixel_scale(imgs[0])
+        native = science_pixel_scale(imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position)
         factors[survey] = choose_bin_factor(
             native, float(fwhm_dict.get(master, 0.0)) or native * 2, min_blur)
     return factors
@@ -158,7 +163,7 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
             continue
 
         bin_factor = bin_factors.get(survey, 1)
-        grid = science_pixel_scale(survey_imgs[0]) * bin_factor
+        grid = science_pixel_scale(survey_imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position) * bin_factor
         print(f"\n>>> Survey {survey}: convolution grid = {grid:.4f} arcsec/px "
               f"(native x bin {bin_factor})")
 
@@ -245,7 +250,7 @@ def rediscover_unmatched(img_files, drivers, survey_list, kernel_dir, master,
         if not survey_imgs:
             continue
 
-        grid = science_pixel_scale(survey_imgs[0]) * bin_factors.get(survey, 1)
+        grid = science_pixel_scale(survey_imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position) * bin_factors.get(survey, 1)
 
         for img in survey_imgs:
             filt = drivers[survey].get_sci_filter_name(str(img))
@@ -296,20 +301,20 @@ def main():
                         help='Trigger PSF cleaning and PyPHER kernel generation')
     parser.add_argument('--apply_mask', action='store_true',
                         help='Generate a signal-based sky mask for the final cube')
-    parser.add_argument('--sigma', type=float, default=1.0,
+    parser.add_argument('--sigma', type=float, default=2.0,
                         help='Sigma threshold for the sky mask cut')
-    parser.add_argument('--error', action='store_true', help='Create error cube')
+    parser.add_argument('--error', action='store_true', help='Create error cube') #not implemented yet
     parser.add_argument('--valid_pixels_cut', action='store_true',
-                        help='Cut the image to a central radius of valid pixels')
+                        help='Cut the image to a central radius of valid pixels') 
     parser.add_argument('--force_convolution', action='store_true',
                         help='Force convolution even if convolved files exist')
     parser.add_argument('--bin_factor', type=int, default=None,
-                        help='Override the derived convolution binning factor '
+                        help='Override the derived convolution binning factor in config.py'
                              '(applies to every survey)')
     parser.add_argument('--min_kernel_px', type=float, default=2.0,
                         help='Minimum kernel width in pixels for a PSF pair to '
                              'be matched; below this the kernel is a near-delta '
-                             'and PyPHER returns ringing')
+                             'and PyPHER returns ringing (Nyquist criteria)')
     parser.add_argument('--preflight_only', action='store_true',
                         help='Validate the configuration and exit without '
                              'processing anything')
@@ -342,7 +347,7 @@ def main():
     print(f'Root Directory: {BASE_DIR}')
 
     if not input_dir.exists():
-        print(f"==> Error: 'Input' folder not found in {BASE_DIR}")
+        print(f">>> Error: 'Input' folder not found in {BASE_DIR}")
         print("Make sure you are in the correct directory.")
         return
 
@@ -360,7 +365,7 @@ def main():
 
         elif choice == "N":
             while input_survey_list is None:
-                selection = str(input("\tSelect desired cubes (PHANGS, S4G, JPAS,...): "))
+                selection = str(input("\tSelect desired cubes (PHANGS-HST, PHANGS-JWST, S4G, JPAS,...): "))
                 candidate = [x.strip().upper() for x in selection.split(",")]
                 available = set(SURVEYS).intersection(set(SURVEY_CONFIG.keys()))
                 if set(candidate).issubset(available):
@@ -374,7 +379,8 @@ def main():
 
     DRIVERS = {
         "BASE": BASE_Driver(config_dict=SURVEY_CONFIG),
-        "PHANGS": PHANGS_Driver(config_dict=SURVEY_CONFIG["PHANGS"]),
+        "PHANGS-HST": PHANGS_Driver(config_dict=SURVEY_CONFIG["PHANGS-HST"]),
+        "PHANGS-JWST": PHANGS_JWST_Driver(config_dict=SURVEY_CONFIG["PHANGS-JWST"]),
         "S4G": S4G_Driver(config_dict=SURVEY_CONFIG["S4G"]),
     }
 

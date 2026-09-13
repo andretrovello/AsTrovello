@@ -70,16 +70,26 @@ psf_filename_parse : dict or None
 # ----------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------- Pivot wavelengths --------------------------------------------------
 PIVOT_WAVELENGTHS = {
-    # PHANGS-HST
+    # ===== PHANGS-HST =====
     'f275w': 2707.19995,
     'f336w': 3354.84995,
     'f438w': 4325.55005,
     'f555w': 5305.94995,
     'f814w': 8048.1001,
-    # S4G
+    # ======== S4G ========
     'irac1': 35075.0,
     'irac2': 44366.0,
-    # PHANGS-JWST
+    # ==== PHANGS-JWST ====
+    # MIRI
+    'f770w': 76393.34,
+    'f1000w': 99531.16,
+    'f1130w': 113085.01,
+    'f2100w': 207950.05,
+    # NIRcam
+    'f200w': 19876.01,
+    'f300m': 29891.21,
+    'f335m': 33620.67,
+    'f360m': 36241.76,
     # 'jpas_j0378': ...,
 }
 
@@ -90,6 +100,7 @@ PIVOT_WAVELENGTHS = {
 SURVEY_CONFIG = {
                     "PHANGS-HST": 
                     {
+                        "hdu_sci_position": 0,
                         "TELESCOP": "HST",
                         "INSTRUME": "WFC3",
                         "pixel_scale_arcsec": 0.0395,
@@ -103,12 +114,25 @@ SURVEY_CONFIG = {
                     },
                     "PHANGS-JWST": 
                     {
+                        "hdu_sci_position": 1,
                         "TELESCOP": "JWST",
-                        "INSTRUME": "MIRI",
-                        "pixel_scale_arcsec": 0.1109,
+                        "INSTRUME": "MIRI/NIRcam",
+                        "pixel_scale_arcsec": 
+                        {
+                            # MIRI
+                            'f770w': 0.11,
+                            'f1000w': 0.11,
+                            'f1130w': 0.11,
+                            'f2100w': 0.11,
+                            # NIRcam
+                            'f200w': 0.031,
+                            'f300m': 0.063,
+                            'f335m': 0.063,
+                            'f360m': 0.063,
+                        },
                         "binned_factor": 4,
                         "sci_glob": "hlsp_phangs-jwst_jwst_*_v1p1_img.fits",
-                        "psf_glob": "*PSFSTD*.fits", 
+                        "psf_glob": "*PSF*.fits", 
                         "apply_sip_correction": False,
                         "sci_unit": "MJy/sr",
                         "err_unit": "MJy/sr",
@@ -116,6 +140,7 @@ SURVEY_CONFIG = {
                     },
                     "S4G":
                     {
+                        "hdu_sci_position": 0,
                         "TELESCOP": "Spitzer",
                         "INSTRUME": "IRAC",
                         "pixel_scale_arcsec": 

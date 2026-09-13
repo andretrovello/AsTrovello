@@ -11,6 +11,11 @@ def convert2Jansky(fits_file: Path, driver) -> tuple:
     Handles HST flux/error maps and Spitzer flux/error maps.
     Recovers missing photometric keywords dynamically.
     """
+    # This always reads a file the pipeline itself produced (a reprojected
+    # _projection.fits or the copied master), where the science data is in
+    # HDU 0 - regardless of survey. The per-survey hdu_sci_position applies
+    # only to the ORIGINAL mosaics read at the resolution/convolution stages,
+    # not here.
     with fits.open(fits_file) as hdu:
         data, header = hdu[0].data, hdu[0].header
 

@@ -776,9 +776,12 @@ def _prepare_image(original_fits: Path, driver, bin_factor: int | None = None
             back to the driver's value when None, which is right only for
             standalone calls.
     """
+    # JWST mosaics keep the science image in HDU 1; HST and S4G in HDU 0.
+    # The driver knows which one for its own survey.
+    ext = getattr(driver, "get_hdu_sci_position", 0)
     with fits.open(original_fits) as hdu_i:
-        img_data = hdu_i[0].data.astype(np.float32)
-        img_header = hdu_i[0].header.copy()
+        img_data = hdu_i[ext].data.astype(np.float32)
+        img_header = hdu_i[ext].header.copy()
 
     invalid = driver.get_invalid_mask(img_data) | ~np.isfinite(img_data)
     img_data = np.where(invalid, np.nan, img_data).astype(np.float32)
