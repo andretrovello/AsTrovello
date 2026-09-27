@@ -18,8 +18,11 @@ def crop_to_mask_bbox(images: list, header, mask: np.ndarray, padding: int = 0) 
 
     y_min, x_min = coords.min(axis=0)
     y_max, x_max = coords.max(axis=0)
-    y_min, y_max = max(0, y_min - padding), min(ny, y_max + padding)
-    x_min, x_max = max(0, x_min - padding), min(nx, x_max + padding)
+    # coords.max() is INCLUSIVE, but a slice bound is exclusive, so the +1 is
+    # what keeps the last valid row and column. Without it the crop silently
+    # dropped one row and one column of real signal, twice per cube.
+    y_min, y_max = max(0, y_min - padding), min(ny, y_max + 1 + padding)
+    x_min, x_max = max(0, x_min - padding), min(nx, x_max + 1 + padding)
 
     cropped_mask = mask[y_min:y_max, x_min:x_max]
     cropped_images = []

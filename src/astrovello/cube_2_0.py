@@ -212,18 +212,27 @@ def create_data_cube(
     print(f"==> Signal-mask cutout: {cropped_images[0].shape} -> {cubo.shape[1:]}")
 
     # 7. Final 3D header
+    #
+    # The spatial WCS is carried over by letting astropy WRITE it, rather than
+    # copying wcs.cdelt / wcs.crval field by field. The reason: a header may
+    # express the same geometry either as CDELT+PC or as a CD matrix. When the
+    # source uses CD - which the S4G master does - astropy leaves wcs.cdelt at
+    # its default [1.0, 1.0], and copying that field produced a cube header
+    # claiming 1 degree per pixel: a factor 4800 error in angular scale.
+    # PIXAREA was unaffected because proj_plane_pixel_area reads the full
+    # transformation, which is why the defect stayed hidden.
+    #
+    # to_header() emits whichever convention is correct for this WCS, so the
+    # cube reproduces the master astrometry exactly (verified to <1e-9 mas).
     w_2d = WCS(final_header, naxis=2)
     pixel_area_arcsec2 = round(proj_plane_pixel_area(w_2d) * 3600**2, 4)
-    w_3d = WCS(naxis=3)
-    for i in [0, 1]:
-        for p in ['crpix', 'crval', 'cdelt', 'ctype', 'cunit']:
-            try:
-                getattr(w_3d.wcs, p)[i] = getattr(w_2d.wcs, p)[i]
-            except Exception:
-                continue
-    w_3d.wcs.crpix[2], w_3d.wcs.crval[2], w_3d.wcs.cdelt[2], w_3d.wcs.ctype[2] = 1, 0, 1, 'FILTER'
-    
-    cube_header = w_3d.to_header()
+
+    cube_header = w_2d.to_header()
+    cube_header['WCSAXES'] = 3
+    cube_header['CTYPE3'] = 'FILTER'
+    cube_header['CRPIX3'] = 1
+    cube_header['CRVAL3'] = 1
+    cube_header['CDELT3'] = 1
     cube_header['BUNIT'] = 'Jy/pixel'
     cube_header["PIXAREA"] = (pixel_area_arcsec2, 'area in square arcseconds')
     

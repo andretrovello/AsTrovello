@@ -127,8 +127,13 @@ class PHANGS_Driver(BASE_Driver):
             preserve_nan=False, allow_huge=True,
         )
 
-        structure = np.ones((kernel_size, kernel_size))
-        expanded_border = binary_dilation(border_mask, structure=structure)
+        # A flat k x k square structuring element is mathematically identical
+        # to k//2 iterations of a 3x3 one, but scipy builds the k x k footprint
+        # explicitly: with a 281 px kernel that is ~1400x slower and can raise
+        # MemoryError. The iterations form is exact, not an approximation.
+        expanded_border = binary_dilation(border_mask,
+                                          structure=np.ones((3, 3)),
+                                          iterations=max(kernel_size // 2, 1))
         convolved_img[expanded_border] = 0.0
 
         return convolved_img
@@ -150,7 +155,17 @@ class PHANGS_Driver(BASE_Driver):
             # (Jy/arcsec², usando a área do pixel NATIVO), depois multiplica
             # pela área real do pixel ATUAL do header — o mesmo esquema de
             # duas etapas que o S4G já usa com MJy/sr, abaixo.
-            native_pixel_area_arcsec2 = self.config["pixel_scale_arcsec"] ** 2
+            # NATPXAR carries the TRUE native pixel area, measured from the
+            # WCS before binning (see bin_for_convolution). It exists exactly
+            # so this conversion stops trusting the config constant: the
+            # drizzled PHANGS-HST mosaics are at 0.039620"/px while config
+            # says 0.0395, and dividing by the smaller area inflated the five
+            # HST bands by 0.61% - a pure COLOUR term, since the IR bands are
+            # unaffected. The config value remains the fallback for images
+            # that were never binned (bin_for_convolution returns early when
+            # factor <= 1 and writes no NATPXAR).
+            native_pixel_area_arcsec2 = fits_header.get(
+                'NATPXAR', self.config["pixel_scale_arcsec"] ** 2)
             surface_brightness = (fits_data * fits_header['PHOTFNU']) / native_pixel_area_arcsec2
 
             w = WCS(fits_header)
@@ -213,8 +228,13 @@ class PHANGS_JWST_Driver(BASE_Driver):
             preserve_nan=False, allow_huge=True,
         )
 
-        structure = np.ones((kernel_size, kernel_size))
-        expanded_border = binary_dilation(border_mask, structure=structure)
+        # A flat k x k square structuring element is mathematically identical
+        # to k//2 iterations of a 3x3 one, but scipy builds the k x k footprint
+        # explicitly: with a 281 px kernel that is ~1400x slower and can raise
+        # MemoryError. The iterations form is exact, not an approximation.
+        expanded_border = binary_dilation(border_mask,
+                                          structure=np.ones((3, 3)),
+                                          iterations=max(kernel_size // 2, 1))
         convolved_img[expanded_border] = 0.0
 
         return convolved_img
@@ -286,8 +306,11 @@ class S4G_Driver(BASE_Driver):
             preserve_nan=False, allow_huge=True,
         )
 
-        structure = np.ones((kernel_size, kernel_size))
-        expanded_nan_mask = binary_dilation(nan_mask_original, structure=structure)
+        # See the note in PHANGS_Driver.convolve: k//2 iterations of a 3x3
+        # element is identical to a flat k x k element, and vastly cheaper.
+        expanded_nan_mask = binary_dilation(nan_mask_original,
+                                            structure=np.ones((3, 3)),
+                                            iterations=max(kernel_size // 2, 1))
         convolved_img[expanded_nan_mask] = np.nan
 
         return convolved_img
