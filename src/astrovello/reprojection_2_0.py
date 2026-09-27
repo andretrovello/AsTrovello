@@ -1,9 +1,28 @@
+"""
+reprojection_2_0.py - resampling onto a common pixel grid.
+
+This module REPROJECTS: it reads the WCS of each image and of the reference,
+and interpolates from one grid to the other. It does not verify or correct
+those WCS.
+
+That distinction is deliberate in the naming. "Astrometric registration" -
+measuring the offsets between sources common to two surveys and adjusting the
+WCS accordingly - is a different operation, and this pipeline does not perform
+it. It trusts the input WCS.
+
+For the PHANGS-HST / PHANGS-JWST pair that trust has been measured: the median
+offset between the two solutions, over five point sources of NGC 1087, is
+0.0087 arcsec = 0.079 pixel of the final grid, against a criterion of 0.5
+pixel (see check1_astrometry.py). No other survey combination has been
+verified, so for anything beyond those two the assumption remains untested.
+"""
+
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
 from pathlib import Path
 # ----------------------------------------------------------------------------------------------------------------------
-# --------------------------------------------- Image alignment -------------------------------------------------------
+# ------------------------------------------ Image reprojection --------------------------------------------------------
 
 def discover_convolved_files(
     convolved_dir: Path,

@@ -10,7 +10,7 @@ PyPHER returns the kernel on the grid of the PSFs it was given. Since that
 kernel is later applied to a science image, **the PSFs must live on the grid
 where the convolution will happen** - not on each detector's native grid.
 
-That is why `clean_psf` takes `target_pixel_scale_arcsec` explicitly and
+That is why `clean_psf` takes `convolution_grid_arcsec` explicitly and
 `pypher_kernel_creation` verifies that every PSF sits on that grid before
 building the commands. The check raises at kernel-generation time rather than
 six stages later in the age map.
@@ -260,7 +260,7 @@ def _resize_centered(data: np.ndarray, size: int) -> np.ndarray:
 
 def clean_psf(input_file: str, output_file: str,
               psf_pixel_scale_arcsec: float,
-              target_pixel_scale_arcsec: float,
+              convolution_grid_arcsec: float,
               max_extent_arcsec: float = 0.0,
               output_size: int | None = None):
     """Resample a PSF onto the grid where the kernel will be APPLIED.
@@ -275,7 +275,7 @@ def clean_psf(input_file: str, output_file: str,
         output_file: output path.
         psf_pixel_scale_arcsec: scale of the INPUT PSF, i.e. the detector's
             native scale divided by the PRF oversampling factor.
-        target_pixel_scale_arcsec: scale of the convolution grid.
+        convolution_grid_arcsec: scale of the convolution grid.
         max_extent_arcsec: maximum total extent of the resampled PSF, to cap
             the kernel size. **Default 0 = no truncation**, which is what you
             want when convolving on a binned grid: the kernel is cheap and you
@@ -301,7 +301,7 @@ def clean_psf(input_file: str, output_file: str,
 
     # --- Resample onto the target grid -----------------------------------
     # ratio = how many input PSF pixels fit into one target pixel
-    ratio = target_pixel_scale_arcsec / psf_pixel_scale_arcsec
+    ratio = convolution_grid_arcsec / psf_pixel_scale_arcsec
 
     if ratio >= 2.0:
         # Large downscale: the bulk goes through AREA AVERAGING
@@ -313,13 +313,13 @@ def clean_psf(input_file: str, output_file: str,
         if abs(residual - 1.0) > 0.005:
             data = zoom(data, 1.0 / residual, order=3, mode="constant", cval=0.0)
         print(f"\t\tblock_reduce {factor}x + zoom {1.0/residual:.4f}x  "
-              f"({psf_pixel_scale_arcsec:.4f} -> {target_pixel_scale_arcsec:.4f})")
+              f"({psf_pixel_scale_arcsec:.4f} -> {convolution_grid_arcsec:.4f})")
     elif abs(ratio - 1.0) > 0.01:
         # Upscale (or small downscale): cubic interpolation. Safe on upscale
         # because the input PRF is already oversampled.
         data = zoom(data, 1.0 / ratio, order=3, mode="constant", cval=0.0)
         print(f"\t\tzoom {1.0/ratio:.4f}x  "
-              f"({psf_pixel_scale_arcsec:.4f} -> {target_pixel_scale_arcsec:.4f})")
+              f"({psf_pixel_scale_arcsec:.4f} -> {convolution_grid_arcsec:.4f})")
 
     # cubic interpolation can produce spurious negatives
     data[data < 0] = 0.0
@@ -330,7 +330,7 @@ def clean_psf(input_file: str, output_file: str,
 
     # --- Optional truncation ---------------------------------------------
     if max_extent_arcsec and max_extent_arcsec > 0:
-        n_max = int(max_extent_arcsec / target_pixel_scale_arcsec)
+        n_max = int(max_extent_arcsec / convolution_grid_arcsec)
         if data.shape[0] > n_max:
             cy, cx = np.unravel_index(np.argmax(data), data.shape)
             half = n_max // 2
@@ -363,7 +363,7 @@ def clean_psf(input_file: str, output_file: str,
         print(f"\t\tresized to {data.shape[0]}px (same grid and shape as target)")
 
     # --- Write -------------------------------------------------------------
-    pixel_scale_deg = target_pixel_scale_arcsec / 3600.0
+    pixel_scale_deg = convolution_grid_arcsec / 3600.0
     new_hdu = fits.PrimaryHDU(data)
     new_hdu.header.update({
         'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN',
@@ -371,11 +371,11 @@ def clean_psf(input_file: str, output_file: str,
         'CRPIX1': (data.shape[1] // 2) + 1,
         'CRPIX2': (data.shape[0] // 2) + 1,
         'CDELT1': -pixel_scale_deg, 'CDELT2': pixel_scale_deg,
-        'PIXSCALE': target_pixel_scale_arcsec,
+        'PIXSCALE': convolution_grid_arcsec,
     })
     new_hdu.writeto(output_file, overwrite=True)
     print(f"\tPSF ready for PyPHER: {os.path.basename(output_file)} "
-          f"({data.shape[0]}px @ {target_pixel_scale_arcsec:.4f} arcsec/px)")
+          f"({data.shape[0]}px @ {convolution_grid_arcsec:.4f} arcsec/px)")
 
 
 def required_blur(width_source: float, width_target: float) -> float:
@@ -836,7 +836,7 @@ def copy_as_convolved(original_fits: Path, survey: str, psf_master_name: str,
     bands (NaN marking + binning) but is not convolved. This matters for the
     master: if its survey has a binning factor > 1 and the master were merely
     copied, it would land on a different grid from its own survey's convolved
-    bands, and the alignment step would resample between grids.
+    bands, and the reprojection step would resample between grids.
 
     The residual mismatch is recorded in the header, so the decision travels
     with the data instead of living only in whoever ran the pipeline.

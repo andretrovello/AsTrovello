@@ -1,7 +1,7 @@
 """
 AsTrovello 2.0 - pipeline command-line interface.
 
-Stages: PSF matching and convolution -> alignment onto the master grid ->
+Stages: PSF matching and convolution -> reprojection onto the master grid ->
 unit conversion to Jy/pixel -> data cube.
 
 Design notes worth knowing before editing this file
@@ -52,11 +52,16 @@ from convolution_2_0 import (
     pypher_kernel_creation,
     required_blur,
 )
-from alignment_2_0 import (
+from reprojection_2_0 import (
     discover_convolved_files,
     reproject_to_reference,
 )
 from units_2_0 import convert2Jansky
+from validation import (
+    check_psf_matching,
+    check_flux_conservation,
+    ValidationError,
+)
 from cube_2_0 import (
     create_data_cube,
     discover_jansky_files,
@@ -129,6 +134,20 @@ def derive_bin_factors(img_files, drivers, survey_list, r80, fwhm_dict,
     return factors
 
 
+def kernel_source_filter(kernel_path):
+    """Source filter of a kernel_<source>_to_<master>.fits name.
+
+    Parsing the name is necessary rather than testing whether a filter appears
+    anywhere in it: the MASTER appears in every kernel name, so a substring
+    test attributes every kernel to the master's survey.
+    """
+    parts = kernel_path.stem.split('_')
+    try:
+        return parts[parts.index('to') - 1].lower()
+    except (ValueError, IndexError):
+        return None
+
+
 def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
                   kernel_dir, master, r80, bin_factors, min_kernel_px):
     """Clean the PSFs and generate the kernels, one grid per source survey.
@@ -180,7 +199,7 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
             input_file=master_psf_raw,
             output_file=out_master,
             psf_pixel_scale_arcsec=master_psf_scale,
-            target_pixel_scale_arcsec=grid,
+            convolution_grid_arcsec=grid,
             max_extent_arcsec=0,    # whole PRF; cheap on a binned grid
         )
         if not out_master.exists():
@@ -200,7 +219,7 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
                 input_file=psf_path,
                 output_file=clean_dir / psf_path.name,
                 psf_pixel_scale_arcsec=driver.get_psf_pixel_scale(filter_name=filt),
-                target_pixel_scale_arcsec=grid,
+                convolution_grid_arcsec=grid,
                 max_extent_arcsec=0,
                 output_size=target_size,
             )
@@ -293,7 +312,7 @@ def print_matching_summary(master, master_survey, r80, conv_pairs, unmatched,
 def main():
     parser = argparse.ArgumentParser('AsTrovello Pipeline Control')
     parser.add_argument('--mode', type=str,
-                        choices=['full', 'alignment_only', 'conv_only', 'cube_only'],
+                        choices=['full', 'reprojection_only', 'conv_only', 'cube_only'],
                         default='full', help='Execution mode')
     parser.add_argument('--galaxy', type=str, required=True,
                         help='Galaxy name (e.g., ngc1566)')
@@ -320,13 +339,18 @@ def main():
                              'processing anything')
     parser.add_argument('--skip_preflight', action='store_true',
                         help='Skip validation (not recommended)')
+    parser.add_argument('--skip_checks', action='store_true',
+                        help='Skip the in-pipeline validation gates (PSF '
+                             'matching and flux conservation). They abort the '
+                             'run on failure; skipping them means accepting '
+                             'the risk knowingly, and it is recorded in the log.')
     parser.add_argument('--allow_mixed', action='store_true',
                         help='Tolerate leftover files from other '
                              'configurations in the output directories. They '
                              'are ignored either way; without this flag their '
                              'presence is an error, because it usually means '
                              'the directory holds mixed results.')
-    parser.add_argument('--quiet', action='store_true', help='Suppress alignment logs')
+    parser.add_argument('--quiet', action='store_true', help='Suppress reprojection logs')
 
     args = parser.parse_args()
     galaxy = args.galaxy
@@ -413,7 +437,7 @@ def main():
     source = "overridden by --bin_factor" if args.bin_factor else "derived from the master"
     print(f"\n>>> Convolution binning factors ({source}): {bin_factors}")
 
-    # Filter -> science image map, reused by the alignment stage
+    # Filter -> science image map, reused by the reprojection stage
     img_by_filter = {}
     for img_path in img_files:
         survey_i = DRIVERS["BASE"].get_survey(file_path=img_path)
@@ -423,6 +447,12 @@ def main():
     if psf_master_name not in img_by_filter:
         raise FileNotFoundError(
             f"No science image for the master filter '{psf_master_name}'.")
+
+    # survey -> its filters, used by the validation gate to attribute each
+    # kernel to the survey whose PSF_CLEAN directory holds its source PSF
+    survey_filters = {}
+    for f, e in img_by_filter.items():
+        survey_filters.setdefault(e['survey'], []).append(f)
 
     master_survey = img_by_filter[psf_master_name]['survey']
     master_img_path = img_by_filter[psf_master_name]['path']
@@ -467,6 +497,31 @@ def main():
 
         # --- bands WITH a kernel: convolve --------------------------------
         kernel_files = sorted(kernel_dir.glob("kernel_*_to_*.fits"))
+
+        # GATE: the kernels must reproduce the master PSF before any image is
+        # convolved with them. Convolving 13 bands with a bad kernel costs an
+        # hour and produces bands at the wrong resolution - invisible in the
+        # images, but it corrupts every colour downstream.
+        if kernel_files and not args.skip_checks:
+            for survey in input_survey_list:
+                psf_clean_dir = input_dir / survey / 'PSF_CLEAN'
+                if not psf_clean_dir.is_dir():
+                    continue
+                masters = sorted(psf_clean_dir.glob('master_*.fits'))
+                if len(masters) != 1:
+                    print(f"==> CHECK 2 skipped for {survey}: expected one "
+                          f"master PSF in {psf_clean_dir}, found {len(masters)}")
+                    continue
+                own_filters = {f.lower()
+                               for f in survey_filters.get(survey, [])}
+                survey_kernels = [k for k in kernel_files
+                                  if kernel_source_filter(k) in own_filters]
+                if not survey_kernels:
+                    continue
+                check_psf_matching(survey_kernels, psf_clean_dir, masters[0])
+        elif args.skip_checks:
+            print("==> CHECK 2 SKIPPED by --skip_checks")
+
         conv_pairs = convolved_dict(img_files, kernel_files, DRIVERS)
 
         for filt, paths in conv_pairs.items():
@@ -505,7 +560,7 @@ def main():
         # It goes through copy_as_convolved rather than a plain file copy so
         # that it is binned like its own survey's bands. With a master from a
         # survey whose bin factor is > 1, a plain copy would leave it on a
-        # different grid and the alignment step would resample between grids.
+        # different grid and the reprojection step would resample between grids.
         copy_as_convolved(
             original_fits=master_img_path,
             survey=master_survey,
@@ -525,8 +580,8 @@ def main():
     # =====================================================================
     # =========================== ALIGNMENT ===============================
     # =====================================================================
-    if args.mode in ('full', 'alignment_only'):
-        print(">>> Initiating image alignment process...")
+    if args.mode in ('full', 'reprojection_only'):
+        print(">>> Initiating image reprojection process...")
 
         convolved_files_dict = discover_convolved_files(
             convolved_dir=convolved_fits_dir,
@@ -549,6 +604,8 @@ def main():
         user_input_filters = set(img_by_filter.keys())
 
         files_to_convert = []
+
+        reprojection_pairs = []   # (band, before, after) for CHECK 3
         for filt, entry in convolved_files_dict.items():
             if entry['is_master'] or filt not in user_input_filters:
                 continue
@@ -568,6 +625,8 @@ def main():
             )
             files_to_convert.append({'path': output_filename,
                                      'survey': entry['survey']})
+            # keep the before/after pair for the flux-conservation gate
+            reprojection_pairs.append((filt, entry['path'], output_filename))
 
         # Copy (and normalise) the master into the reprojected directory
         reprojected_dir_gal = reprojected_dir / galaxy
@@ -587,6 +646,15 @@ def main():
         print(f'\tCopied master FITS file: {master_reprojected_path}\n')
         files_to_convert.append({'path': master_reprojected_path,
                                  'survey': reference_survey})
+
+        # GATE: reprojection must conserve flux. This runs BEFORE the unit
+        # conversion on purpose - a leak that reaches the Jy files has already
+        # propagated into everything downstream, and the conversion would also
+        # rescale the numbers, making the leak harder to attribute.
+        if not args.skip_checks and reprojection_pairs:
+            check_flux_conservation(reprojection_pairs)
+        elif args.skip_checks:
+            print("==> CHECK 3 SKIPPED by --skip_checks")
 
         # ----------------------- UNIT CONVERSION -------------------------
         print(">>> Converting units to Jansky (Jy)...")
@@ -640,7 +708,7 @@ def main():
         if len(ordered_filters) != len(img_by_filter):
             print(f"==> Warning: the cube will have {len(ordered_filters)} "
                   f"planes but {len(img_by_filter)} bands were found. Check "
-                  f"the alignment and unit-conversion logs.")
+                  f"the reprojection and unit-conversion logs.")
 
         cube_output_dir = output_dir / 'datacubes' / galaxy.lower()
         cube_output_dir.mkdir(parents=True, exist_ok=True)
