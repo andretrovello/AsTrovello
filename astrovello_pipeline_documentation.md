@@ -24,7 +24,7 @@ dissertation chapter on data reduction.
 3. [PSF measurement and master selection](#3-psf-measurement-and-master-selection)
 4. [PSF matching and kernel generation](#4-psf-matching-and-kernel-generation)
 5. [Convolution](#5-convolution)
-6. [Alignment / reprojection (`alignment_2_0.py`)](#6-alignment--reprojection-alignment_2_0py)
+6. [Reprojection (`reprojection_2_0.py`)](#6-reprojection-reprojection_2_0py)
 7. [Unit conversion (`units_2_0.py`)](#7-unit-conversion-units_2_0py)
 8. [Datacube assembly (`cube_2_0.py`, `mask_2_0.py`)](#8-datacube-assembly-cube_2_0py-mask_2_0py)
 9. [Preflight validation (`preflight.py`)](#9-preflight-validation-preflightpy)
@@ -37,15 +37,43 @@ dissertation chapter on data reduction.
 ## 1. Overview and design principles
 
 AsTrovello ingests imaging of a galaxy from several surveys (PHANGS-HST,
-PHANGS-JWST, S4G/Spitzer) and produces a single spatially-registered datacube
-in Jy/pixel, on a common pixel grid and at a common angular resolution. That
-cube is the input to the segmentation and SED-fitting stages (Capivara).
+PHANGS-JWST, S4G/Spitzer) and produces a single datacube in Jy/pixel,
+reprojected onto a common pixel grid and homogenised to a common angular
+resolution. That cube is the input to the segmentation and SED-fitting stages
+(Capivara).
+
+The cube is **reprojected**, not **registered**. The pipeline reads the WCS of
+each input and interpolates between grids; it does not measure or correct
+those WCS, so it inherits whatever astrometric agreement the surveys already
+have. The distinction matters because "registered" would claim an operation
+that is not performed (see the vocabulary note below).
+
+For **PHANGS-HST against PHANGS-JWST** that agreement has been measured rather
+than assumed: the median offset between the two WCS solutions, over five point
+sources of NGC 1087, is 0.0087 arcsec = 0.079 pixel of the final grid, against
+a criterion of 0.5 pixel (`check1_astrometry.py`; the same procedure applied to
+HST against itself returns exactly zero). **No other survey combination has
+been verified.** For S4G, J-PAS or any future addition the assumption remains
+untested, and mixing them carries a risk that has not been quantified.
+
+### A note on vocabulary
+
+Three operations are routinely conflated, and this document keeps them apart:
+
+| term | operation |
+|---|---|
+| **reprojection** (regridding, resampling) | bring images onto the same pixel grid, trusting their WCS. This is what `reproject` does, and what this pipeline does. |
+| **astrometric registration** (astrometric alignment) | measure the offsets between sources common to two images and correct the WCS. **Not implemented here.** |
+| **PSF matching** (homogenisation) | bring images to the same angular resolution. This is what PyPHER and the convolution stage do. |
+
+"Alignment" on its own is avoided, because it reads as registration. The module
+that performs the resampling is therefore `reprojection_2_0.py`.
 
 The pipeline runs in four stages, in this order:
 
 1. **PSF matching + convolution** — degrade every band to the resolution of
    the worst-resolved band (the *master*).
-2. **Alignment** — reproject every band onto the master's pixel grid.
+2. **Reprojection** — reproject every band onto the master's pixel grid.
 3. **Unit conversion** — convert every band to Jy/pixel.
 4. **Datacube** — stack the bands, subtract sky, mask, and write the cube.
 
@@ -67,7 +95,7 @@ non-obvious code exists to enforce them:
   facts that cannot be measured (file-naming conventions, unit strings,
   reference PSF scales).
 
-The order convolution → alignment is deliberate and is the single most
+The order convolution → reprojection is deliberate and is the single most
 important architectural decision. It is justified quantitatively in Section 6.
 
 ---
@@ -128,7 +156,7 @@ Key properties on the base:
 - **Units.** S4G `.phot` mosaics are in MJy/sr; same conversion as JWST.
 - **SIP distortion.** S4G headers carry real 3rd-order SIP distortion
   coefficients but omit the `-SIP` suffix on `CTYPE`. `get_sip` returns True so
-  that the alignment stage re-attaches the suffix, making the header
+  that the reprojection stage re-attaches the suffix, making the header
   self-consistent with the coefficients that are already present.
 - **Native vs mosaic scale.** The IRAC detector is 1.221″/px, but the `.phot`
   mosaics are drizzled to 0.75″/px. This distinction is the origin of the
@@ -328,7 +356,7 @@ r50(convolved source)/r50(target) was 0.08 before the fix and ~1.06 after.
 
 ### `clean_psf(...)`
 
-Resamples a PSF onto the convolution grid. Takes `target_pixel_scale_arcsec`
+Resamples a PSF onto the convolution grid. Takes `convolution_grid_arcsec`
 **explicitly** — this is the enforcement mechanism for the core principle.
 
 Resampling strategy (the important detail):
@@ -407,7 +435,7 @@ That is, **PyPHER returns the kernel on the pixel scale of the target PSF**
 (`p = p_b`), rescaling the source PSF to match. This single line is the formal
 statement of the bug that AsTrovello 1.x contained: the kernel was produced on
 `p_b` (the IRAC grid) and then applied to an image on a different grid. Our
-`clean_psf(..., target_pixel_scale_arcsec=...)` enforces that both PSFs — and
+`clean_psf(..., convolution_grid_arcsec=...)` enforces that both PSFs — and
 therefore `p` — are the *convolution* grid.
 
 **Aniano et al. (2011), Sect. 7 ("Usage of the Kernels")** gives the same
@@ -642,7 +670,7 @@ itself) with the same preparation (NaN + binning) but no convolution, recording
 `PSFMATCH=False` and the residual. Using this for the master (rather than a
 plain copy) matters when the master's survey has a binning factor > 1: a plain
 copy would leave it on a different grid from its own survey's convolved bands,
-and the alignment step would then resample between grids.
+and the reprojection step would then resample between grids.
 
 ### `diagnose_negatives`, `inspect_kernel`
 
@@ -654,9 +682,21 @@ ringing by locating the negatives and comparing the worst one to the noise.
 
 ---
 
-## 6. Alignment / reprojection (`alignment_2_0.py`)
+## 6. Reprojection (`reprojection_2_0.py`)
 
-### Why convolution comes before alignment
+This stage brings every band onto the master's pixel grid. It **reprojects**:
+it reads the WCS of the source and of the reference and interpolates between
+them. It does not verify or correct those WCS - that would be astrometric
+registration, which the pipeline does not perform.
+
+The trust placed in the input WCS has been quantified for **one pair only**.
+PHANGS-HST against PHANGS-JWST agree to a median 0.0087 arcsec = 0.079 pixel of
+the final grid, over five point sources of NGC 1087, against a criterion of 0.5
+pixel (`check1_astrometry.py`). **S4G, J-PAS and any future survey remain
+unverified**: for those the agreement is assumed, not measured, and the risk of
+combining them has not been quantified.
+
+### Why convolution comes before reprojection
 
 This is the key architectural decision, and it rests on the Nyquist criterion.
 On the final 0.75″/px grid, the master (FWHM 1.72″) is sampled at 2.29 px/FWHM
@@ -690,7 +730,7 @@ output pixel share essentially the same noise realisation and averaging them
 does not reduce σ. `reproject_adaptive` remains a small improvement (flux
 conservation ~1%, border handling) but is not a priority.
 
-### Literature mapping — alignment and reprojection
+### Literature mapping — reprojection
 
 Neither source paper is *about* reprojection (both are about kernels), but both
 constrain it, and one of the constraints is the reason our pipeline convolves
