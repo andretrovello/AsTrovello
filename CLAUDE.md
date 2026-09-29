@@ -2,9 +2,17 @@
 
 Multi-survey datacube construction for spatially-resolved SED fitting.
 Ingests PHANGS-HST, PHANGS-JWST and S4G/Spitzer imaging of one galaxy and
-produces a single spatially-registered datacube in Jy/pixel, at a common
-angular resolution, on a common pixel grid. That cube feeds the segmentation
+produces a single datacube in Jy/pixel, at a common angular resolution,
+**reprojected** onto a common pixel grid. That cube feeds the segmentation
 and SED-fitting stages (Capivara).
+
+**Scope caveat — reprojection, not registration.** The pipeline trusts the
+input WCS; it does not measure or correct offsets between surveys. Only
+PHANGS-HST <-> PHANGS-JWST has been verified (NGC 1087: median offset
+0.0087" = 0.079 px, no systematic). S4G and any other survey are *assumed*
+consistent, not measured. Keep the three terms apart: **reprojection**
+(regridding, what the pipeline does), **astrometric registration** (not
+implemented), **PSF matching** (the convolution stage).
 
 Author: André Almeida Trovello (IAG-USP, MSc). The companion methodological
 document is `astrovello_pipeline_documentation.md` — it is the basis for the
@@ -18,6 +26,12 @@ Section 4 below. It supplies the debugging history the audit could not see and
 records which findings the author accepts, qualifies or disputes. Where the two
 disagree, the resolution has been folded into Section 4 and the disagreement
 noted.
+
+`session_report_audit_and_validation.md` is the author's report of the session
+that fixed A1, A2, A3, B1 and added the validation gates.
+`fix_verification_2026-09-28.md` is the independent check of that session:
+which fixes hold, which gaps remain, and where the report is inconsistent
+(summarised in Section 4a below).
 
 ---
 
@@ -47,7 +61,16 @@ Two hard requirements that are easy to trip over:
 Useful flags: `--preflight_only` (validate config in seconds and exit),
 `--create_kernel` (regenerate PSFs + kernels; also forces reconvolution),
 `--bin_factor N` (override the derived convolution grid), `--allow_mixed`
-(tolerate leftover files from another configuration).
+(tolerate leftover files from another configuration), `--skip_checks`
+(bypass the in-pipeline validation gates; logged). The reprojection-only mode
+is now `--mode reprojection_only` (was `alignment_only`).
+
+**The canonical run is on the author's Mac** (`/Users/andretrovello/Research/
+AsTrovello`). This checkout (WSL) has only `Input/PHANGS` and `Input/S4G` — no
+JWST inputs — and `Output/PSF_Kernels/` holds stale v1.x `*_to_irac1` kernels.
+Intermediate products of the current HST+JWST (master `f2100w`) run are not
+here; only the final NGC 1087 cube was copied over. Do not treat what is in
+`Output/` as the current state of a run without checking.
 
 ### Layout
 
@@ -67,12 +90,19 @@ Output/datacubes/<galaxy>/          final cube
 
 1. **PSF matching + convolution** — degrade every band to the resolution of
    the worst-resolved band (the *master*).
-2. **Alignment** — reproject every band onto the master's pixel grid.
+2. **Reprojection** — reproject every band onto the master's pixel grid.
 3. **Unit conversion** — convert every band to Jy/pixel.
 4. **Datacube** — stack, sky-subtract, mask, write.
 
-Stage 3 lives *inside* the alignment block in the CLI, so `--mode
-alignment_only` also converts units.
+Stage 3 lives *inside* the reprojection block in the CLI, so `--mode
+reprojection_only` also converts units.
+
+Two validation gates (`validation.py`) abort the run on failure:
+`check_psf_matching` after kernels are built and before any convolution
+(r50 ratio 0.95-1.05), and `check_flux_conservation` after reprojection and
+before unit conversion (area-weighted sky apertures, < 1%). Thresholds are
+module constants by design — a threshold relaxable at the call site is not a
+gate.
 
 ### Module map
 
@@ -82,7 +112,11 @@ alignment_only` also converts units.
 | `config.py` | per-survey constants only — things that cannot be measured |
 | `drivers.py` | per-survey behaviour: HDU, invalid mask, `convolve`, `convert2Jansky` |
 | `convolution_2_0.py` | PSF widths, `clean_psf`, kernel generation, binning, convolution |
-| `alignment_2_0.py` | file discovery by header, `reproject_to_reference` |
+| `reprojection_2_0.py` | file discovery by header, `reproject_to_reference` (was `alignment_2_0.py`; line numbers cited in Sect. 4 C refer to the old file) |
+| `validation.py` | in-pipeline gates `check_psf_matching`, `check_flux_conservation`, `ValidationError` |
+| `check2_psf_matching.py`, `check3_flux_conservation.py` | standalone versions of the gates, for reporting; write to `Output/checks/<name>/` |
+| `diagnostico_astrometria.py` | two-line stub (imports only). The HST<->JWST WCS check the report calls `check1_astrometry.py` is **not in the repo** — commit it before citing Check 1 |
+| `pypher_regularisation_test.py` | the 1.06 investigation (report calls it `test_pypher_regularisation.py`) |
 | `units_2_0.py` | thin dispatcher to the driver's `convert2Jansky` |
 | `cube_2_0.py`, `mask_2_0.py` | cube assembly, footprint/signal masks, sky subtraction |
 | `preflight.py` | validate the whole configuration before any compute |
@@ -102,8 +136,9 @@ enforce one of them.
    PSFs must be resampled to the **convolution grid**, not to any detector's
    native grid. This was v1.x's central bug: kernels built on the IRAC grid
    and applied on the HST grid gave ~12x too little blur. Enforced by
-   `clean_psf(target_pixel_scale_arcsec=...)` and the guard in
-   `pypher_kernel_creation`.
+   `clean_psf(convolution_grid_arcsec=...)` (renamed from
+   `target_pixel_scale_arcsec`, which wrongly suggested a link to the target
+   PSF) and the guard in `pypher_kernel_creation`.
 
 2. **Convolution before reprojection.** The master (FWHM 1.72") on the final
    0.75"/px grid is at 2.29 px/FWHM — above Nyquist, so reprojecting an
@@ -132,8 +167,8 @@ enforce one of them.
 
 7. **Information travels with the data.** Provenance goes in the header
    (`PSFTARGT`, `PSFMATCH`, `PSFRESID`, `NATPXAR`, `BINFACT`) and discovery
-   selects on the header, not the filename. (See defect A2 — `NATPXAR` is
-   written but never read.)
+   selects on the header, not the filename. (`NATPXAR` is now read — A2 —
+   but is only *written* on the binned path; see Sect. 4a.)
 
 ---
 
@@ -142,16 +177,25 @@ enforce one of them.
 Findings from a full read-only audit (2026-09-17), reconciled against the
 author's response in `audit_evaluation.md`. Every quantitative claim below was
 verified against the real data in `Input/` or the real outputs in `Output/`.
-Nothing here has been fixed yet.
+
+**Fix status (verified 2026-09-28, see Sect. 4a):** A1, A3, B1 **fixed**;
+A2 **fixed on the binned path only**; everything else **open**, including B2.
+The line numbers below are from the audit and may have drifted.
 
 Status key: **[agreed]** author concurs; **[agreed, reweighted]** author
 concurs and considers it more serious than first placed; **[qualified]**
 scope narrowed after author's evidence; **[corrected]** an explanation in the
-audit or the response was wrong and has been revised.
+audit or the response was wrong and has been revised; **[FIXED]** /
+**[PARTIAL]** / **[OPEN]** state of the code as of 2026-09-28.
 
 ### A. Corrupts science output
 
-#### A1. Datacube WCS is wrong — CDELT = 1 deg/px  [CRITICAL]
+#### A1. Datacube WCS is wrong — CDELT = 1 deg/px  [CRITICAL] [FIXED]
+
+> Fixed with `w_2d.to_header()` + explicit axis-3 keys (not the `sub` idiom
+> below — equivalent). Verified on the regenerated NGC 1087 cube: WCS scale
+> 0.11090538"/px agrees with `PIXAREA`; no CD/SIP residue. The ngc1433 and
+> ngc2903 cubes in `Output/datacubes/` predate the fix and are still wrong.
 
 `cube_2_0.py:217-224` builds the 3D WCS by copying `crpix/crval/cdelt/ctype/
 cunit` element-by-element. It never copies the **CD or PC matrix**.
@@ -197,7 +241,14 @@ the existing `w_3d.wcs.crpix[2], crval[2], cdelt[2], ctype[2] = 1, 0, 1,
 'FILTER'` line must be kept after the `sub` call. Remove the bare except.
 Re-make any cube already produced.
 
-#### A2. `NATPXAR` is written but never read — HST fluxes ~0.6% too high
+#### A2. `NATPXAR` is written but never read — HST fluxes ~0.6% too high  [PARTIAL]
+
+> Now read (`drivers.py:167`); measured f814w ratio 0.993960 vs predicted
+> 0.99395. **Gap:** `bin_for_convolution` still returns before writing
+> `NATPXAR` when `factor <= 1` (or `None`). On that path — for convolved and
+> `copy_as_convolved` bands alike, both go through `_prepare_image` — the
+> fallback reinstates the stale 0.0395" constant and the 0.61% error. The fallback recommended below was incomplete: write the key on
+> every path instead.
 
 `astrovello_pipeline_documentation.md` states twice (Sects. 5 and 7) that
 `NATPXAR` is what stops the unit conversion reading the binned WCS area by
@@ -227,7 +278,10 @@ Note `bin_for_convolution` returns early when `factor <= 1`
 (`convolution_2_0.py:623`), so `NATPXAR` is absent whenever bin == 1 — the
 fallback matters.
 
-#### A3. Off-by-one in `crop_to_mask_bbox`
+#### A3. Off-by-one in `crop_to_mask_bbox`  [FIXED]
+
+> Fixed; cube 1276x1134 -> 1277x1135, all 13 planes share 947,959 valid px.
+> The `padding` defect (Sect. D) is separate and still open.
 
 `mask_2_0.py:19-24`: `coords.max(axis=0)` is an **inclusive** index used as an
 **exclusive** slice bound.
@@ -243,7 +297,14 @@ signal are lost off the top/right edge.
 
 ### B. Convolution stage
 
-#### B1. `binary_dilation` with a full-kernel square structuring element  [CRITICAL for usability]
+B3, B4, B5, B6, B7 are **[OPEN]**.
+
+#### B1. `binary_dilation` with a full-kernel square structuring element  [CRITICAL for usability] [FIXED]
+
+> Fixed in all three drivers with `iterations=max(k//2, 1)` (the `max` guards
+> scipy's `iterations=0` = "until convergence"). **The session report
+> re-derives the refuted mechanism** (that a smaller `border_mask` explains
+> the JWST-mask speed-up) — the [corrected] note below still stands.
 
 `drivers.py:130-131` (identical at JWST `:216-217`, S4G `:289-290`):
 
@@ -316,7 +377,15 @@ failure mode, leaving the `MemoryError` cliff latent for any future
 configuration with a finer grid. **Do B1 before or together with B6, not
 after.**
 
-#### B2. `inspect_kernel` cannot see the failure it exists to catch
+#### B2. `inspect_kernel` cannot see the failure it exists to catch  [OPEN]
+
+> Still normalises first, and the same pattern was copied into
+> `validation.check_psf_matching` and `check2_psf_matching.measure`. The
+> current kernels are healthy — measured on the raw PyPHER output in
+> `Output/checks/check2_psf_matching/`: raw sum +1.0000 for all 12, raw and
+> normalised negative power identical — so the report's Check 2 figures
+> (incl. HST 0.00%) are real. But no gate would catch a sign-flipped kernel.
+> Fix all three and raise on `sum < 0`.
 
 `convolution_2_0.py:934-938` normalises **before** inspecting:
 
@@ -378,7 +447,7 @@ case is precisely the one it cannot catch.
 
 Fix: make a missing `PIXSCALE` a hard error.
 
-#### B4. Kernel glob is not master-scoped
+#### B4. Kernel glob is not master-scoped  [OPEN — now also feeds Check 2]
 
 `astrovello_cli_2.0.py:469` globs `kernel_*_to_*.fits`, while
 `rediscover_unmatched` (`:244`) correctly globs `kernel_*_to_{master}.fits`.
@@ -583,22 +652,64 @@ the cube footprint. The doc describes the masked path as the normal one.
 
 ---
 
+## 4a. Verification of the 2026-09 fix session
+
+Full detail in `fix_verification_2026-09-28.md`. Done by code review plus
+measurement on the artefacts present in this checkout (the run itself was on
+the Mac — see Sect. 1).
+
+**Validation code (`validation.py`, CLI wiring) is sound**: gates at the right
+stages, fixed thresholds, missing `PIXSCALE` and grid mismatch raise,
+`kernel_source_filter` parses rather than substring-matches, flux is
+area-weighted via `|det(pixel_scale_matrix)|`.
+
+**Limit of Check 2 to state in the dissertation:** it convolves the *same*
+`PSF_CLEAN` files PyPHER used to build the kernel, so r50 ~ 1.0000 is nearly
+guaranteed by construction. It catches stale kernels, grid mismatch and a
+widened kernel; it is not independent evidence of the resolution reached on
+the science images.
+
+**Inconsistencies in `session_report_audit_and_validation.md`** — fix before
+it feeds the dissertation:
+
+- **Check 3 table is from a different run.** It shows `grid out = 0.75"`, an
+  `irac1` row, `f200w` from 0.0307" and 14 bands, whereas the declared
+  configuration is HST+JWST, master `f2100w`, final grid 0.1109", 13 bands.
+  Re-run Check 3 on the f2100w configuration.
+- **B1 mechanism paragraph** repeats the refuted "smaller mask -> faster"
+  explanation (see B1 [corrected]).
+- **The 1.06 investigation** discards three hypotheses but not the known one:
+  `diagnostico_etapa1c.py` measures numerator and denominator on different
+  grids (Sect. D). The new checks use one grid, which alone would remove the
+  1.06. Test before attributing it to the S4G configuration.
+- **File names:** `check1_astrometry.py` is not in the repo
+  (`diagnostico_astrometria.py` is a stub); `test_pypher_regularisation.py`
+  is `pypher_regularisation_test.py`.
+
+**Untested hypothesis for `irac1` at 0.84% in Check 3:** the pre-reprojection
+S4G header has SIP coefficients without the `-SIP` suffix (astropy ignores
+them), while the reprojected header has `-SIP` re-attached. The same sky
+aperture lands on different pixels on the two sides — a check artefact, not a
+flux loss. Relates to C1/C2.
+
+---
+
 ## 5. Suggested fix order
 
 Reconciled with `audit_evaluation.md`. The author's one adjustment — promoting
 B2 to sit with A2, because a number cited as evidence in dissertation material
-depends on it — is adopted.
+depends on it — is adopted. Updated 2026-09-28 after the fix session.
 
 | # | Item | Why |
 |---|---|---|
-| 1 | **A1** — cube WCS | Corrupts every cube produced; factor 4800 in angular scale. Fix idiom verified (`w_2d.sub([1,2,0])`, keep the axis-3 defaults) |
-| 2 | **B1** — dilation | One line, ~1400x, and the likeliest explanation for the unexplained residual slowness. **Must precede or accompany B6** |
-| 3 | **A2** — read `NATPXAR` | One line; removes a 0.61% *colour* systematic before SED fitting |
-| 4 | **B2** — inspect before normalising | One line; restores a guard the pipeline currently lacks, and a dissertation number depends on it |
-| 5 | A3, B3, B4, B5 | Correctness, cheap |
+| ~~1~~ | ~~**A1** — cube WCS~~ | **Done.** Regenerate the ngc1433 / ngc2903 cubes, which still carry `CDELT = 1.0` |
+| ~~2~~ | ~~**B1** — dilation~~ | **Done** |
+| 3 | **A2 gap** — write `NATPXAR` on every path | Reading it is done; writing it when bin <= 1 is not, and the fallback silently restores the 0.61% colour error |
+| 4 | **B2** — inspect before normalising | Still open, now in three places (`convolution_2_0`, `validation`, `check2_psf_matching`). Raise on `sum < 0` |
+| 5 | B3, B4, B5 (A3 done) | Correctness, cheap. B4 now also feeds the Check 2 gate |
 | 6 | **B6** — per-survey `min_blur` | Real compute win; run `--preflight_only` first (master drops to 3.1 px/FWHM) |
 | 7 | C1, C2 — SIP keys | Latent today, silently wrong astrometry when it activates |
-| 8 | Documentation reconciliation | The "raises" claims, the "no aliasing" claim, the r50 tolerance and grid systematic, the `reproject_interp` order (C3) |
+| 8 | Documentation reconciliation | The "raises" claims, the "no aliasing" claim (still in the `bin_for_convolution` docstring), the r50 tolerance and grid systematic, the `reproject_interp` order (C3); plus the session-report corrections in Sect. 4a (Check 3 table, B1 mechanism, 1.06, file names) |
 | 9 | Packaging (E1-E5) | When handing the code to someone else |
 
 Two items are **decisions, not fixes**, and are the author's to make: whether
@@ -626,8 +737,8 @@ Worth keeping in view when refactoring — these are the parts that are right:
   quotations tied to specific functions transfer to the dissertation chapter
   nearly as-is.
 - Writing provenance to the header and selecting on it rather than on
-  filenames. `NATPXAR` only needs to actually be read for the pattern to be
-  complete.
+  filenames. `NATPXAR` is now read; it only needs to be written on every
+  path (including bin 1) for the pattern to be complete.
 
 ---
 
