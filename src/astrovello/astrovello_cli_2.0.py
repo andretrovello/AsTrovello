@@ -26,8 +26,10 @@ Design notes worth knowing before editing this file
 """
 
 import argparse
+import logging
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -73,6 +75,52 @@ from utils_2_0 import (
 from preflight import preflight
 
 
+
+def configure_warnings(show_all: bool = False) -> None:
+    """Quieten the harmless astropy header fixes, keep the meaningful ones.
+
+    astropy reports every header omission it repairs. Two of them fire on
+    essentially every JWST file and say nothing useful: `datfix` fills DATE-BEG
+    from MJD-BEG, `obsfix` fills OBSGEO-L/B/H from OBSGEO-X/Y/Z. Neither
+    touches the spatial WCS, and together they bury the rest of the log.
+
+    The SIP warning is deliberately NOT suppressed. It reports a real
+    inconsistency - S4G headers carry SIP coefficients while CTYPE lacks the
+    "-SIP" suffix - which the pipeline handles explicitly in
+    reproject_to_reference. Seeing it is how one knows the situation is still
+    the one the code assumes.
+
+    Args:
+        show_all: restore every warning, for debugging.
+    """
+    if show_all:
+        warnings.resetwarnings()
+        warnings.simplefilter("always")
+        logging.getLogger("astropy").setLevel(logging.INFO)
+        print(">>> All warnings enabled (--show_warnings)")
+        return
+
+    # Matched on the message rather than the class: FITSFixedWarning covers
+    # datfix, obsfix AND other repairs worth seeing, so filtering by class
+    # would be too broad.
+    for pattern in (r".*'datfix' made the change.*",
+                    r".*'obsfix' made the change.*"):
+        warnings.filterwarnings("ignore", message=pattern)
+
+    # astropy re-routes warnings through its own logger, which is why the
+    # messages appear as "WARNING: ... [astropy.wcs.wcs]" and why
+    # warnings.filterwarnings alone does not stop them: by the time the filter
+    # would apply, the text is already a log record. A logging filter on the
+    # same two messages closes that second path.
+    class _DropHarmlessFixes(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            return not ("'datfix' made the change" in msg
+                        or "'obsfix' made the change" in msg)
+
+    logging.getLogger("astropy").addFilter(_DropHarmlessFixes())
+
+
 def find_science_image(img_files, drivers, survey, filt):
     """Locate the science image for a given (survey, filter) pair."""
     return next(
@@ -114,12 +162,16 @@ def derive_bin_factors(img_files, drivers, survey_list, r80, fwhm_dict,
     memory. But the factor cannot be a per-survey constant: with an HST master
     a factor of 5 would sample the target at 0.4 px/FWHM and destroy it.
 
+    The smallest required blur is computed PER SURVEY, over that survey's own
+    bands. Taking it globally would let a pair on one survey's grid constrain
+    another's: with HST+JWST+S4G the IRAC1-IRAC2 blur - the smallest of all,
+    and a pair that is then skipped as unresolvable - would hold the HST grid
+    to bin 5 when bin 14 is sufficient. The binning factor is a property of
+    the target as seen FROM EACH SOURCE GRID, not a single global number.
+
     `override` (from --bin_factor) applies to every survey and skips the
     derivation, for when the run needs a specific grid.
     """
-    blurs = [required_blur(r80[b], r80[master]) for b in r80 if b != master]
-    min_blur = min(blurs) if blurs else float('inf')
-
     factors = {}
     for survey in survey_list:
         imgs = [p for p in img_files if drivers["BASE"].get_survey(p) == survey]
@@ -128,6 +180,13 @@ def derive_bin_factors(img_files, drivers, survey_list, r80, fwhm_dict,
         if override:
             factors[survey] = int(override)
             continue
+
+        # this survey's own bands, excluding the master
+        own_bands = {drivers[survey].get_sci_filter_name(p.name) for p in imgs}
+        blurs = [required_blur(r80[b], r80[master])
+                 for b in own_bands if b in r80 and b != master]
+        min_blur = min(blurs) if blurs else float('inf')
+
         native = science_pixel_scale(imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position)
         factors[survey] = choose_bin_factor(
             native, float(fwhm_dict.get(master, 0.0)) or native * 2, min_blur)
@@ -244,7 +303,7 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
 
         unmatched.extend((filt, survey, resid) for filt, resid in skipped)
 
-    n_kernels = len(list(kernel_dir.glob("kernel_*_to_*.fits")))
+    n_kernels = len(list(kernel_dir.glob(f"kernel_*_to_{master}.fits")))
     print(f"\n>>> Kernel processing completed! ({n_kernels} kernels)")
     return unmatched
 
@@ -339,6 +398,11 @@ def main():
                              'processing anything')
     parser.add_argument('--skip_preflight', action='store_true',
                         help='Skip validation (not recommended)')
+    parser.add_argument('--show_warnings', action='store_true',
+                        help='Show every warning, including the harmless '
+                             'astropy header repairs (datfix, obsfix) that '
+                             'are suppressed by default. The SIP warning is '
+                             'never suppressed.')
     parser.add_argument('--skip_checks', action='store_true',
                         help='Skip the in-pipeline validation gates (PSF '
                              'matching and flux conservation). They abort the '
@@ -353,6 +417,7 @@ def main():
     parser.add_argument('--quiet', action='store_true', help='Suppress reprojection logs')
 
     args = parser.parse_args()
+    configure_warnings(args.show_warnings)
     galaxy = args.galaxy
 
     print(100 * '#')
@@ -496,7 +561,21 @@ def main():
         force_conv = args.force_convolution or args.create_kernel
 
         # --- bands WITH a kernel: convolve --------------------------------
-        kernel_files = sorted(kernel_dir.glob("kernel_*_to_*.fits"))
+        # Scoped to the CURRENT master. An unscoped glob picks up kernels left
+        # over from a previous configuration - the repository still carries
+        # v1.x "*_to_irac1" files - and those would either be applied silently
+        # or, now that the gate exists, abort the run against the wrong target.
+        kernel_files = sorted(
+            kernel_dir.glob(f"kernel_*_to_{psf_master_name}.fits"))
+
+        stray = [k for k in kernel_dir.glob("kernel_*_to_*.fits")
+                 if k not in kernel_files]
+        if stray:
+            print(f"==> {len(stray)} kernel(s) for another master ignored:")
+            for k in stray[:6]:
+                print(f"      {k.name}")
+            if len(stray) > 6:
+                print(f"      ... and {len(stray) - 6} more")
 
         # GATE: the kernels must reproduce the master PSF before any image is
         # convolved with them. Convolving 13 bands with a bad kernel costs an

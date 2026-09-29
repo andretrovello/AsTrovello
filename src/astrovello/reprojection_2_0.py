@@ -196,7 +196,22 @@ def reproject_to_reference(
         )
         img_base_new_header = hdu_img_base.header.copy()
 
-    # Replace the WCS of the output header with the reference grid
+    # Replace the WCS of the output header with the reference grid.
+    #
+    # NOTE on SIP. An earlier revision deleted the source SIP coefficients
+    # here, on the reasoning that they describe the SOURCE detector in SOURCE
+    # pixels and are meaningless once the array is on the reference grid. That
+    # reasoning was tested and is WRONG for this data.
+    #
+    # Measured on the real S4G files (test_sip_hypothesis.py): removing the
+    # coefficients displaces pixel-to-sky by a median 6.6 arcsec, up to 49.7 -
+    # 8.8 and 66 pixels of the 0.75" grid - and the flux-conservation
+    # deviation for irac1 rose from 0.84% to 11.3%. The coefficients are not
+    # residual field distortion; they carry part of the S4G astrometric
+    # solution, which is why this function re-attaches the "-SIP" suffix that
+    # those headers omit (see above). Deleting them makes the WCS worse.
+    #
+    # They are therefore left in place.
     wcs_ref_header = w_ref.to_header(relax=True)
     wcs_keys_to_remove = [
         'CRPIX1', 'CRPIX2', 'CRVAL1', 'CRVAL2', 'CDELT1', 'CDELT2',

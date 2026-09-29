@@ -144,13 +144,29 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
                 f"a factor ~12 too little.")
 
         psf_src = fits.getdata(src_path).astype(np.float64)
-        kernel = fits.getdata(kern_path).astype(np.float64)
-        kernel = kernel / kernel.sum()
+        kernel_raw = fits.getdata(kern_path).astype(np.float64)
+        ksum = kernel_raw.sum()
 
+        # A negative sum is a hard failure, not something to normalise away:
+        # dividing by it flips every sign, so a 100%-negative kernel reads as
+        # 100% positive and the diagnostic below sees nothing wrong. That is
+        # the v1.x grid-mismatch signature.
+        if ksum < 0:
+            raise ValidationError(
+                f"{filt}: kernel has a NEGATIVE sum ({ksum:+.4f}). Normalising "
+                f"would flip every sign and make a pathological kernel read as "
+                f"healthy. Check that both PSFs are on the convolution grid.")
+        if ksum == 0:
+            raise ValidationError(f"{filt}: kernel sums to zero.")
+
+        # Negative power is measured on the RAW kernel. Measuring after
+        # normalisation is blind to the sign flip above and to a sum far from 1.
+        neg = _negative_power_pct(kernel_raw)
+
+        kernel = kernel_raw / ksum
         conv = fftconvolve(psf_src, kernel, mode='same')
         ratio50 = _enclosed_radius(conv, scale_src, 0.5) / r50_master
         ratio80 = _enclosed_radius(conv, scale_src, 0.8) / r80_master
-        neg = _negative_power_pct(kernel)
 
         ok = PSF_RATIO_LO <= ratio50 <= PSF_RATIO_HI
         if not ok:

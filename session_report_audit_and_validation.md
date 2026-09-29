@@ -26,7 +26,8 @@ states what was expected, what was measured, and whether they agree.
 8. [Vocabulary](#8-vocabulary)
 9. [Regenerated cubes](#9-regenerated-cubes)
 10. [Files created or modified](#10-files-created-or-modified)
-11. [Open items](#11-open-items)
+11. [Cross-review](#11-cross-review)
+12. [Open items](#12-open-items)
 
 ---
 
@@ -36,7 +37,7 @@ states what was expected, what was measured, and whether they agree.
 |---|---|---|---|
 | Check 1 — WCS consistency (HST↔JWST) | < 0.5 px | **0.079 px** (0.0087″) | PASS, 6× margin |
 | Check 2 — PSF matching, 12 pairs | 0.95–1.05 | **1.0000–1.0001** | PASS |
-| Check 3 — flux conservation, 13 bands | < 1% | **0.15% median**, 0.84% worst | PASS |
+| Check 3 — flux conservation, 12 bands | < 1% | **0.01% worst**, 0.10% max scatter | PASS |
 | A1 — cube WCS | scales must agree | 0.110905 vs 0.110905 | fixed |
 | A2 — HST pixel area | −0.61% on HST, 0% on IR | −0.604% / +0.000% | fixed |
 | A3 — crop off-by-one | +1 px per axis | 1276×1134 → 1277×1135 | fixed |
@@ -156,16 +157,19 @@ of a 3×3 one.
 
 Identity checked with `np.array_equal`: bit for bit, not an approximation.
 
-The kernels in this configuration are 157 px (HST) and **281 px** (JWST), so
-the old form could not run at all on the JWST bands. Observed in practice:
-convolution went from minutes per filter to seconds.
+The kernels in this configuration are 157 px (HST) and **281 px** (JWST). At
+those sizes the old form can fail with `MemoryError` — it did here at k=157 on
+a 600² mask, though the audit ran the same k on a 1600² image in 29 s, so the
+failure threshold is machine-dependent. Observed in practice: convolution went
+from minutes per filter to seconds.
 
-This also explains an unresolved observation from earlier work — after fixing
-the JWST invalid-pixel convention the convolution became noticeably faster.
-That was attributed to the FFT no longer interpolating over a large invalid
-region, which is true but partial: correcting the mask also shrank
-`border_mask`, the input to this dilation, and that was probably the dominant
-term.
+**A mechanism this does not explain.** An earlier draft suggested that the
+speed-up seen after correcting the JWST invalid-pixel convention was dominated
+by this dilation, on the grounds that a corrected mask is smaller. The audit
+had already measured the opposite: scipy short-circuits pixels that are
+already `True`, so a **smaller** mask makes the full-square dilation **slower**
+(0.4% True → 2.32 s; 43.6% True → 1.33 s). That earlier speed-up was the FFT,
+as originally diagnosed. The correction here is a separate and additive gain.
 
 ---
 
@@ -307,6 +311,24 @@ Three secondary metrics accompany the ratio:
 
 **PASS**, all 12 pairs.
 
+### What this check does and does not establish
+
+The gate convolves the **same** `PSF_CLEAN` files that PyPHER used to build the
+kernel. A ratio near 1.0000 is therefore close to guaranteed by construction,
+and the numbers above should not be read as independent evidence that the
+science images reach the master resolution.
+
+What the check does catch, and what makes it worth running as a gate:
+
+- a stale kernel, built for a different master
+- a kernel and its PSFs on mismatched grids (the v1.x defect, which raises)
+- a sign-flipped kernel (raises, since the B2 correction)
+- a kernel deliberately widened: a 30% wider kernel measures 1.5811 and aborts
+
+Independent evidence would require measuring the PSF on the convolved science
+images themselves — for instance the FWHM of field stars before and after
+convolution. That has not been done.
+
 ### A physical pattern worth noting
 
 The negative power of the JWST kernels grows monotonically as the source PSF
@@ -347,7 +369,9 @@ patch of sky on each grid — with the sum in each aperture **weighted by the
 pixel area** of its grid.
 
 The weighting is the crux, and the first version of this check omitted it. The
-result was a spectacular false failure:
+result was a spectacular false failure. The run below was made on an
+HST+JWST+S4G configuration (master `irac2`, 0.75 arcsec/px), which is why the
+band list differs from the final table above:
 
 ```
 HST bands        : ratio 0.0697        (0.1981/0.75)^2 = 0.0698
@@ -388,36 +412,100 @@ Deliberately corrupting one case by 5% makes the check fail, as it should.
 
 ### Result
 
+Configuration: PHANGS-HST + PHANGS-JWST, master `f2100w`, reference grid
+0.1109 arcsec/px.
+
 | band | n ap | grid in | grid out | ratio | scatter | deviation |
 |---|---:|---:|---:|---:|---:|---:|
-| f275w | 8 | 0.1981 | 0.7500 | 0.9974 | 0.21% | +0.26% |
-| f336w | 8 | 0.1981 | 0.7500 | 0.9976 | 0.20% | +0.24% |
-| f438w | 8 | 0.1981 | 0.7500 | 0.9987 | 0.15% | +0.13% |
-| f555w | 8 | 0.1981 | 0.7500 | 0.9991 | 0.11% | +0.09% |
-| f814w | 8 | 0.1981 | 0.7500 | 0.9992 | 0.11% | +0.08% |
-| f200w | 6 | 0.0307 | 0.7500 | 0.9922 | 7.86% | +0.78% |
-| f300m | 8 | 0.0630 | 0.7500 | 1.0001 | 0.26% | +0.01% |
-| f335m | 8 | 0.0630 | 0.7500 | 0.9994 | 0.19% | +0.06% |
-| f360m | 8 | 0.0630 | 0.7500 | 0.9989 | 0.19% | +0.11% |
-| f770w | 8 | 0.1109 | 0.7500 | 0.9979 | 0.09% | +0.21% |
-| f1000w | 8 | 0.1109 | 0.7500 | 0.9983 | 0.09% | +0.17% |
-| f1130w | 8 | 0.1109 | 0.7500 | 0.9980 | 0.09% | +0.20% |
-| f2100w | 8 | 0.1109 | 0.7500 | 0.9989 | 0.21% | +0.11% |
-| irac1 | 5 | 0.7500 | 0.7500 | 0.9916 | 1.43% | +0.84% |
+| f275w | 8 | 0.1981 | 0.1109 | 0.9999 | 0.04% | +0.01% |
+| f336w | 8 | 0.1981 | 0.1109 | 0.9999 | 0.03% | +0.01% |
+| f438w | 8 | 0.1981 | 0.1109 | 0.9999 | 0.02% | +0.01% |
+| f555w | 8 | 0.1981 | 0.1109 | 0.9999 | 0.01% | +0.01% |
+| f814w | 8 | 0.1981 | 0.1109 | 0.9999 | 0.05% | +0.01% |
+| f200w | 7 | 0.0307 | 0.1109 | 0.9999 | 0.10% | +0.01% |
+| f300m | 6 | 0.0630 | 0.1109 | 0.9999 | 0.07% | +0.01% |
+| f335m | 8 | 0.0630 | 0.1109 | 1.0000 | 0.01% | +0.00% |
+| f360m | 8 | 0.0630 | 0.1109 | 0.9999 | 0.03% | +0.01% |
+| f770w | 8 | 0.1109 | 0.1109 | 0.9999 | 0.00% | +0.01% |
+| f1000w | 8 | 0.1109 | 0.1109 | 0.9999 | 0.01% | +0.01% |
+| f1130w | 8 | 0.1109 | 0.1109 | 0.9999 | 0.01% | +0.01% |
 
 ```
-worst deviation  : 0.840%
-median deviation : 0.152%
+worst deviation : 0.01%
+max scatter     : 0.10%
 ```
 
-**PASS**, all 14 bands.
+**PASS**, all 12 bands, with 100x margin on the criterion.
 
-Two entries deserve comment. `f200w` has the largest scatter (7.86%) and used
-only 6 apertures — expected, since it undergoes the most extreme grid change
-(24× in scale, 600× in area). And `irac1` shows the **worst** deviation despite
-being the only band **not** reprojected (0.75″ → 0.75″); the likely cause is the
-SIP correction applied in `reproject_to_reference`, which re-attaches the
-`-SIP` suffix. Not blocking, since S4G is deferred, but unexplained.
+Twelve bands rather than thirteen: `f2100w` is the master, so it is not
+reprojected and has no before/after pair.
+
+Three bands (`f770w`, `f1000w`, `f1130w`) show `grid in = grid out = 0.1109` —
+they are already on the reference grid, and the resampling is a no-op. They
+return 0.9999 with 0.00-0.01% scatter, which is the control this table
+contains: where nothing is resampled, nothing changes.
+
+### A correction to an earlier version of this report
+
+An earlier draft carried a Check 3 table with `grid out = 0.7500` for every
+band, an `irac1` row, and 14 bands against the 13 stated in the summary. That
+table came from an **HST+JWST+S4G** run and did not belong to the
+configuration this report describes; it was pasted without being checked
+against the document's own heading, and the `irac1` row was visible evidence
+that it did not fit.
+
+The measurement above replaces it. The difference is not small: the stale
+table reported a worst deviation of 0.84%, this one 0.01%.
+
+The `irac1` anomaly discussed there (0.84% on a band that was **not**
+reprojected) belongs to the S4G configuration, not to this one. Investigating
+it uncovered a genuine defect, described in the next subsection.
+
+### What the `irac1` investigation found, and what it got wrong
+
+The starting hypothesis was that the deviation was an artefact of the check:
+SIP handled differently either side of the reprojection, so the same sky
+aperture landing on different pixels.
+
+Reading the code appeared to confirm something worse.
+`reproject_to_reference` replaces the linear WCS of the output with the
+reference's — removing `CRPIX`, `CRVAL`, `CDELT`, `CD`, `PC` and `CTYPE` — but
+the list does not include the SIP coefficients (`A_p_q`, `B_p_q`, `A_ORDER`,
+`AP_*`, `BP_*`). Those describe the distortion of the SOURCE detector in
+SOURCE pixel coordinates, so the output header seemed to carry the reference
+linear WCS combined with a distortion that no longer referred to anything. A
+synthetic test with second-order coefficients showed displacements of 0.04″ to
+0.38″, and the coefficients were removed.
+
+**That was wrong, and the measurement says so.** Running
+`test_sip_hypothesis.py` on the real S4G files:
+
+```
+astrometric shift from removing the SIP keys, over 25 field positions:
+    median 6.6119"   min 0.0416"   max 49.7211"
+    in pixels of the 0.75" grid:  median 8.8,  max 66.3
+
+flux-conservation deviation, irac1:
+    with the SIP keys     0.840%   (scatter  1.43%)
+    without them         11.273%   (scatter 15.42%)
+```
+
+Removing the coefficients made the WCS **worse by more than an order of
+magnitude**. A displacement of 50 arcsec is not residual field distortion: in
+these files the SIP terms carry part of the S4G astrometric solution itself.
+That is consistent with what the function already does elsewhere — it
+deliberately re-attaches the `-SIP` suffix that the S4G headers omit,
+precisely so those coefficients are applied.
+
+The change was reverted, and the reasoning recorded in the code so the same
+argument is not made again.
+
+Two things are worth taking from this. The synthetic test was built with
+plausible-looking coefficients and produced a displacement two orders of
+magnitude smaller than the real ones; it validated the mechanism but said
+nothing about the magnitude, and treating it as evidence about the data was
+the error. And the hypothesis remains **unresolved**: the 0.84% is not
+explained by SIP handling, and its cause is still unknown.
 
 ---
 
@@ -485,10 +573,27 @@ None of the three hypotheses accounts for the 1.06, and **the current
 configuration does not reproduce it**: the worst HST pair, `f275w → f2100w` at
 0.39 px/FWHM, measures 1.0001.
 
-The most likely explanation is that 1.06 belonged to the HST+S4G configuration
-(master `irac2`) and was eliminated by one of the intervening corrections —
-the grid fix, `_recenter_odd`, or `copy_as_convolved(is_master=True)`. Since
-S4G is deferred, it has been left as a historical note rather than pursued.
+### A fourth mechanism, identified by the audit
+
+The three hypotheses above were tested and discarded, but they were not the
+only candidates. The audit points to a sharper one that this investigation
+missed: `diagnostico_etapa1c.py` (lines 207-209) measures the **numerator** on
+the convolution grid and the **denominator** on the raw PRF grid. A ratio
+whose two terms come from different grids carries a systematic that has
+nothing to do with the kernel.
+
+That would explain both facts at once — why 1.06 appeared then, and why it is
+absent now: the current checks measure both terms on the same grid, which
+alone would remove it.
+
+**This remains untested.** The cheap test is to re-run the etapa1c comparison
+with the target r50 measured on the convolution grid. If the ratio drops to
+~1.00, the 1.06 was a measurement systematic and never a kernel defect.
+
+Until that test is run, the attribution stands as: 1.06 belonged to the
+HST+S4G configuration, its cause is most likely the mixed-grid ratio above,
+and the current configuration measures 1.0001. Since S4G is deferred, it has
+been left as a note rather than pursued.
 
 One quantitative by-product: the effect of `r` on a real PSF pair does exist
 but only far from the default.
@@ -612,10 +717,11 @@ conversion (A2) and the fast dilation (B1).
 | file | role |
 |---|---|
 | `validation.py` | in-pipeline gates; `check_psf_matching`, `check_flux_conservation`, `ValidationError` |
-| `check1_astrometry.py` | standalone WCS consistency, with the HST-against-itself sanity test |
+| `check1_astrometry.py` | standalone WCS consistency, with the HST-against-itself sanity test. **Not yet committed** — the repository carries only a stub (`src/astrovello/diagnostico_astrometria.py`), so the Check 1 result cannot currently be reproduced from it. Commit before citing. |
 | `check2_psf_matching.py` | standalone PSF matching over all pairs, with auto-discovery |
 | `check3_flux_conservation.py` | standalone flux conservation in sky apertures |
-| `test_pypher_regularisation.py` | the 1.06 investigation: synthetic control plus regularisation sweep |
+| `test_pypher_regularisation.py` | the 1.06 investigation: synthetic control plus regularisation sweep. **In the repository as `pypher_regularisation_test.py`** |
+| `test_sip_hypothesis.py` | strips the SIP keys from a copy of a reprojected file and re-measures flux conservation, to test whether they explain the `irac1` deviation |
 
 ### Modified
 
@@ -625,7 +731,7 @@ conversion (A2) and the fast dilation (B1).
 | `drivers.py` | A2 — read `NATPXAR`; B1 — dilation by iterations (3 places) |
 | `mask_2_0.py` | A3 — inclusive/exclusive bound in `crop_to_mask_bbox` |
 | `convolution_2_0.py` | `convolution_grid_arcsec` rename |
-| `alignment_2_0.py` → `reprojection_2_0.py` | renamed, new module header |
+| `alignment_2_0.py` → `reprojection_2_0.py` | renamed, new module header. A revision that removed the source SIP coefficients was reverted after measurement showed it degrades the WCS (Sect. 5); the reasoning is recorded in the code |
 | `astrovello_cli_2.0.py` | gates wired in, `--skip_checks`, renames, `kernel_source_filter` |
 | `astrovello_pipeline_documentation.md` | vocabulary, scope caveat, renames |
 
@@ -634,11 +740,39 @@ so their products stay with the data they describe.
 
 ---
 
-## 11. Open items
+## 11. Cross-review
 
-**`irac1` at 0.84% in check 3.** The worst deviation, and the only band **not**
-reprojected. Likely the SIP correction in `reproject_to_reference`. Not
-blocking while S4G is deferred, but unexplained.
+This report was reviewed against the repository by the audit tool that
+produced the original defect list (`fix_verification_2026-09-28.md`). The
+review confirmed A1, A2, A3 and B1 as fixed, and found four problems in this
+report or in the fixes. All four have been addressed above:
+
+| finding | where | resolution |
+|---|---|---|
+| A2 only fixed on the binned path — `NATPXAR` absent when `factor <= 1`, so the fallback reinstates the stale constant | §2 A2 | key now written on every path; the docstring's "no aliasing" claim also corrected |
+| B2 not fixed, and repeated in the new gate — negative power still measured after normalisation, in three places | §7 | measured on the raw kernel in all three; a negative sum is now a hard failure |
+| the Check 3 table belonged to an HST+JWST+S4G run, not to the configuration this report describes | §5 | re-measured on the f2100w configuration; the correction is documented in place |
+| the B1 speed-up mechanism had already been refuted by measurement, and the 1.06 investigation missed a fourth candidate | §2 B1, §6 | both paragraphs corrected; the mixed-grid hypothesis added |
+
+Two further points from the review are reflected in the text: the limit of
+what Check 2 establishes (§4) and the file-name mismatches (§10).
+
+The review also verified something this report could not: it read the **raw**
+PyPHER kernels and confirmed that the 0.00% negative power reported for the
+HST bands is a genuine property of those kernels, not an artefact of measuring
+after normalisation. The number was right; the method that produced it was
+not, and has been corrected.
+
+---
+
+## 12. Open items
+
+**`irac1` at 0.84% — cause unknown.** The SIP hypothesis was tested on the
+real files and **refuted**: removing the coefficients raises the deviation to
+11.3% (Sect. 5). Whatever produces the 0.84% on a band that is not resampled
+is still unidentified. Not blocking while S4G is deferred, but it should be
+settled before S4G returns, since it is the one band whose flux is not
+conserved to the level every other band reaches.
 
 **Astrometric verification of the other surveys.** Only HST↔JWST has been
 measured. Running `check1_astrometry.py` on any new combination is the
@@ -655,6 +789,15 @@ on a different survey's grid. Computing it per survey would allow bin 14
 instead of 5 for HST, cutting the convolution to ~13% of the pixels while
 keeping 3.1 px/FWHM on the master. Worth running `--preflight_only` before
 adopting.
+
+**Audit items still open**, per the cross-review: B3 (a missing `PIXSCALE`
+skips the grid guard, and the stale v1.x kernels are exactly the files without
+that key), B5 (border filled with `0.0` rather than `NaN`), B6 (per-survey
+`min_blur`), B7, C1, C2, the documentation items under D, and the packaging
+items under E.
+
+**`check1_astrometry.py` is not in the repository.** The Check 1 result cannot
+be reproduced from it until the script is committed.
 
 **Sagui segmentation.** Paula's observation that the default segmentation is
 not scale-invariant — it translates the SED without renormalising, so it groups

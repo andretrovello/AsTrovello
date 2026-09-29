@@ -134,7 +134,18 @@ class PHANGS_Driver(BASE_Driver):
         expanded_border = binary_dilation(border_mask,
                                           structure=np.ones((3, 3)),
                                           iterations=max(kernel_size // 2, 1))
-        convolved_img[expanded_border] = 0.0
+        # Blank the border with NaN, not 0.0. A zero is ambiguous: it is
+        # indistinguishable from a genuine null flux, and `mask_final =
+        # isfinite(...)` in create_data_cube (the --apply_mask off path) would
+        # then admit the border as valid data. NaN says "no data" and every
+        # downstream consumer already understands it.
+        #
+        # The cost is that reproject_interp spreads NaN into neighbouring
+        # output pixels, so the unusable border grows slightly on resampling
+        # (measured: 0.7% of the field for a 10 px border on a 600 px image).
+        # That is the honest accounting of a region that carries no data,
+        # rather than a silent zero that looks like a measurement.
+        convolved_img[expanded_border] = np.nan
 
         return convolved_img
     
@@ -235,7 +246,18 @@ class PHANGS_JWST_Driver(BASE_Driver):
         expanded_border = binary_dilation(border_mask,
                                           structure=np.ones((3, 3)),
                                           iterations=max(kernel_size // 2, 1))
-        convolved_img[expanded_border] = 0.0
+        # Blank the border with NaN, not 0.0. A zero is ambiguous: it is
+        # indistinguishable from a genuine null flux, and `mask_final =
+        # isfinite(...)` in create_data_cube (the --apply_mask off path) would
+        # then admit the border as valid data. NaN says "no data" and every
+        # downstream consumer already understands it.
+        #
+        # The cost is that reproject_interp spreads NaN into neighbouring
+        # output pixels, so the unusable border grows slightly on resampling
+        # (measured: 0.7% of the field for a 10 px border on a 600 px image).
+        # That is the honest accounting of a region that carries no data,
+        # rather than a silent zero that looks like a measurement.
+        convolved_img[expanded_border] = np.nan
 
         return convolved_img
     

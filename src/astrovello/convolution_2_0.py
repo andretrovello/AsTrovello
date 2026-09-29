@@ -616,10 +616,23 @@ def bin_for_convolution(img_data: np.ndarray, header: fits.Header,
     `convert2Jansky` expects. With a sum, the native area would change and the
     unit conversion would break.
 
-    Binning by mean is the EXACT area average, unlike interpolation. There is
-    no aliasing and no loss of information.
+    Binning by mean is area-exact averaging, which is the correct operation
+    for a pixel integral and does not introduce the decimation aliasing that
+    point sampling would. The box filter's transfer function is not an ideal
+    low-pass, so weak aliasing remains; it is negligible at the sampling
+    factors used here.
     """
+    # NATPXAR is written on EVERY path, including the no-binning one. It is
+    # what convert2Jansky reads to recover the true native pixel area, and its
+    # absence sends that function back to the stale config constant (0.0395"
+    # against the drizzled 0.039620"), silently reintroducing a 0.61%
+    # HST-only - therefore COLOUR - error. A fallback to a known-wrong value
+    # hides the defect; writing the key everywhere prevents it.
     if factor is None or factor <= 1:
+        header = header.copy()
+        header["NATPXAR"] = (float(native_pixel_area_arcsec2),
+                             "native pixel area, arcsec2 (pre-binning)")
+        header["BINFACT"] = (1, "binning factor applied before convolution")
         return img_data, header
 
     ny, nx = img_data.shape
@@ -735,7 +748,7 @@ def diagnose_negatives(convolved_img, invalid_mask, filt, survey):
     print(50 * '-')
 
 
-def inspect_kernel(kernel_norm: np.ndarray, filt: str) -> None:
+def inspect_kernel(kernel: np.ndarray, filt: str) -> None:
     """Print metrics of the kernel actually being applied.
 
     A legitimate smoothing kernel is almost entirely positive. High negative
@@ -746,17 +759,17 @@ def inspect_kernel(kernel_norm: np.ndarray, filt: str) -> None:
     size (wrong grid), sum (normalisation), negative power (wrong master or
     unresolvable pair), centroid (parity-crop shift).
     """
-    abs_sum = np.abs(kernel_norm).sum()
-    neg_frac = 100.0 * abs(kernel_norm[kernel_norm < 0].sum()) / abs_sum if abs_sum > 0 else np.nan
+    abs_sum = np.abs(kernel).sum()
+    neg_frac = 100.0 * abs(kernel[kernel < 0].sum()) / abs_sum if abs_sum > 0 else np.nan
 
-    total = kernel_norm.sum()
-    y, x = np.indices(kernel_norm.shape)
-    k = np.abs(kernel_norm)
+    total = kernel.sum()
+    y, x = np.indices(kernel.shape)
+    k = np.abs(kernel)
     t = k.sum()
     cy, cx = (k * y).sum() / t, (k * x).sum() / t
-    c0y, c0x = (kernel_norm.shape[0] - 1) / 2, (kernel_norm.shape[1] - 1) / 2
+    c0y, c0x = (kernel.shape[0] - 1) / 2, (kernel.shape[1] - 1) / 2
 
-    print(f"\t\tkernel {filt}: {kernel_norm.shape[0]}px | sum {total:.4f} | "
+    print(f"\t\tkernel {filt}: {kernel.shape[0]}px | sum {total:.4f} | "
           f"negative power {neg_frac:.2f}% | "
           f"centroid off ({cy-c0y:+.2f}, {cx-c0x:+.2f}) px")
 
@@ -930,14 +943,36 @@ def create_convolvedFITS(original_fits: Path, kernel_fits: Path,
     if ksum == 0:
         raise ValueError(f"Kernel {kernel_fits} has zero sum - invalid kernel!")
 
-    # Dividing by a negative sum flips the sign and normalises to +1, which is
-    # the correct behaviour: PyPHER sometimes returns the kernel with the
-    # global sign inverted, and that is cosmetic.
+    # A negative sum is NOT cosmetic. Dividing by it flips every sign, so a
+    # kernel that is 100% negative normalises to 100% positive and every
+    # diagnostic downstream reads it as healthy. That is precisely the v1.x
+    # signature (sum -0.50, 100% negative power) which normalisation would
+    # have hidden. Fail instead of rescuing it.
+    if ksum < 0:
+        raise ValueError(
+            f"Kernel {Path(kernel_fits).name} has a NEGATIVE sum ({ksum:+.4f}). "
+            f"Normalising would flip every sign and make a pathological kernel "
+            f"read as healthy. This is the v1.x grid-mismatch signature: check "
+            f"that both PSFs were cleaned onto the convolution grid.")
+
+    # Inspect the RAW kernel, before normalisation. Measuring after dividing by
+    # the sum is blind to exactly the two failure modes worth catching: a
+    # sign-flipped kernel, and a kernel whose sum is far from 1.
+    inspect_kernel(kernel_data, filt)
+
     kernel_norm = (kernel_data / ksum).astype(np.float32)
     kernel_size = kernel_norm.shape[0]
-    inspect_kernel(kernel_norm, filt)
 
     # --- grid sanity: was the kernel built on the grid it is applied to? ---
+    #
+    # This guard exists to stop the v1.x defect returning: a kernel generated
+    # on one grid and applied on another, which blurred by a factor ~12 too
+    # little without raising anything.
+    #
+    # An unknown scale is therefore a HARD FAILURE, not a reason to skip. A
+    # guard that cannot fire on its own motivating case is not a guard - and
+    # the v1.x kernels still on disk are precisely the files that carry no
+    # PIXSCALE, so skipping would wave through exactly what this checks for.
     k_px = fits.getheader(kernel_fits).get('PIXSCALE')
     if k_px is None:
         with warnings.catch_warnings():
@@ -947,16 +982,26 @@ def create_convolvedFITS(original_fits: Path, kernel_fits: Path,
                     WCS(fits.getheader(kernel_fits), naxis=2)) * 3600 ** 2)
             except Exception:
                 k_px = None
-    if k_px is not None:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            img_px = np.sqrt(proj_plane_pixel_area(WCS(img_header, naxis=2)) * 3600 ** 2)
-        if abs(k_px - img_px) / img_px > 0.02:
-            raise ValueError(
-                f"Kernel for '{filt}' is on {k_px:.4f} arcsec/px but the "
-                f"convolution image is on {img_px:.4f} arcsec/px. The blur "
-                f"would be wrong by a factor of ~{img_px/k_px:.1f}. "
-                f"Regenerate the kernels with --create_kernel.")
+
+    if k_px is None:
+        raise ValueError(
+            f"Kernel {Path(kernel_fits).name} declares no pixel scale: it has "
+            f"no PIXSCALE keyword and no usable WCS. Its grid cannot be "
+            f"verified against the image, so the convolution cannot be shown "
+            f"to be valid.\n"
+            f"    Kernels written by this pipeline always carry PIXSCALE; one "
+            f"that does not is almost certainly a leftover from an older "
+            f"version. Regenerate with --create_kernel.")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        img_px = np.sqrt(proj_plane_pixel_area(WCS(img_header, naxis=2)) * 3600 ** 2)
+    if abs(k_px - img_px) / img_px > 0.02:
+        raise ValueError(
+            f"Kernel for '{filt}' is on {k_px:.4f} arcsec/px but the "
+            f"convolution image is on {img_px:.4f} arcsec/px. The blur "
+            f"would be wrong by a factor of ~{img_px/k_px:.1f}. "
+            f"Regenerate the kernels with --create_kernel.")
 
     # --- convolve -----------------------------------------------------------
     convolved_img = driver.convolve(img_data, kernel_norm, kernel_size)

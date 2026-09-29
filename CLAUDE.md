@@ -10,7 +10,9 @@ and SED-fitting stages (Capivara).
 input WCS; it does not measure or correct offsets between surveys. Only
 PHANGS-HST <-> PHANGS-JWST has been verified (NGC 1087: median offset
 0.0087" = 0.079 px, no systematic). S4G and any other survey are *assumed*
-consistent, not measured. Keep the three terms apart: **reprojection**
+consistent, not measured. (Within S4G, irac1 <-> irac2 agree to ~0.1" *only
+with SIP switched off* — see C4. S4G against HST/JWST in absolute terms is
+still unmeasured beyond ~8 stars near the centre.) Keep the three terms apart: **reprojection**
 (regridding, what the pipeline does), **astrometric registration** (not
 implemented), **PSF matching** (the convolution stage).
 
@@ -31,7 +33,34 @@ noted.
 that fixed A1, A2, A3, B1 and added the validation gates.
 `fix_verification_2026-09-28.md` is the independent check of that session:
 which fixes hold, which gaps remain, and where the report is inconsistent
-(summarised in Section 4a below).
+(summarised in Section 4a below). `fix_verification_2026-09-29.md` checks the
+second fix session (2.1, 2.2, B3-B6) and resolves the irac1 0.84% (Section 4b).
+
+---
+
+## 0. Current state and what "done" means (2026-09-29)
+
+**Read this before proposing more fixes.** The audit cycle has converged. The
+first audit found errors in the output (A1 cube WCS 4800× off, A2 0.61% HST
+colour error, A3 lost edge pixels), and those are fixed. The second round found
+holes in the guards, now also fixed. The third round found **no errors in the
+fixes**, only hardening, plus one survey-specific issue (C4).
+
+- **HST+JWST cube (master `f2100w`): no blocking code fix remains.**
+- **Cubes with S4G (master `irac2`): one — C4**, a ~5-line fix. Its effect is
+  ≤ 0.17" inside ~1.5′ (~10% of the PSF FWHM) and ~0.8" in the outer disc.
+  It does not invalidate existing results.
+
+**Stopping rule.** Pick the cube(s) the dissertation uses. Apply C4 only if
+S4G is among them. Do one clean run (empty the galaxy's `convolved_fits`,
+`reprojected_files` and `datacubes`, run with `--create_kernel`). If both
+gates pass, freeze and tag that commit.
+
+**Triage rule for anything found after that:** it is a **blocker** only if it
+changes a number in the cube actually used. Otherwise it is **hardening**
+(backlog) or **cosmetic**. When reporting findings, label each one explicitly
+with that class and say which cube it affects. Listing everything at equal
+weight made hardening look like new bugs and the work look circular.
 
 ---
 
@@ -66,11 +95,15 @@ Useful flags: `--preflight_only` (validate config in seconds and exit),
 is now `--mode reprojection_only` (was `alignment_only`).
 
 **The canonical run is on the author's Mac** (`/Users/andretrovello/Research/
-AsTrovello`). This checkout (WSL) has only `Input/PHANGS` and `Input/S4G` — no
-JWST inputs — and `Output/PSF_Kernels/` holds stale v1.x `*_to_irac1` kernels.
-Intermediate products of the current HST+JWST (master `f2100w`) run are not
-here; only the final NGC 1087 cube was copied over. Do not treat what is in
-`Output/` as the current state of a run without checking.
+AsTrovello`). A WSL checkout also exists with only `Input/PHANGS` and
+`Input/S4G` and stale v1.x `*_to_irac1` kernels. On the Mac, `Output/` holds
+intermediates of **more than one configuration side by side** (NGC 1087:
+`*_to_s4g_irac2_*` and `*_to_phangs-jwst_f2100w_*`), and some files predate
+the latest fixes (e.g. `ngc1087_phangs-jwst_f2100w_master.fits` has no
+`NATPXAR`/`BINFACT`). Existing convolved files are **reused** when their
+`PSFTARGT` matches, unless `--create_kernel`/`--force_convolution` is given.
+Do not treat what is in `Output/` as the current state of a run without
+checking the headers.
 
 ### Layout
 
@@ -167,8 +200,14 @@ enforce one of them.
 
 7. **Information travels with the data.** Provenance goes in the header
    (`PSFTARGT`, `PSFMATCH`, `PSFRESID`, `NATPXAR`, `BINFACT`) and discovery
-   selects on the header, not the filename. (`NATPXAR` is now read — A2 —
-   but is only *written* on the binned path; see Sect. 4a.)
+   selects on the header, not the filename. (`NATPXAR` is now read and
+   written on every path; the config-constant fallback in `convert2Jansky`
+   is still present — see Sect. 4b.)
+
+8. **A missing provenance key or an unverifiable guard is a hard error, not a
+   fallback.** Every A2/B2/B3 defect was a fallback to a known-wrong value or a
+   skipped check. Preferring `raise` over `.get(key, default)` is how the
+   pipeline stops silently reinstating a fixed bug.
 
 ---
 
@@ -178,9 +217,12 @@ Findings from a full read-only audit (2026-09-17), reconciled against the
 author's response in `audit_evaluation.md`. Every quantitative claim below was
 verified against the real data in `Input/` or the real outputs in `Output/`.
 
-**Fix status (verified 2026-09-28, see Sect. 4a):** A1, A3, B1 **fixed**;
-A2 **fixed on the binned path only**; everything else **open**, including B2.
-The line numbers below are from the audit and may have drifted.
+**Fix status (verified 2026-09-29, see Sects. 4a, 4b):** A1, A2, A3, B1, B2,
+B3, B4, B5, B6 **fixed** (A2 and B2 each with a small remaining gap, Sect. 4b).
+Open: B7, C1, C2, C3 (doc only), **C4 (new)**, D, E.
+The line numbers below are from the audit and may have drifted. Fixes after
+2026-09-28 are uncommitted on `v2-dev/reproject_changes-audit` at the time of
+writing.
 
 Status key: **[agreed]** author concurs; **[agreed, reweighted]** author
 concurs and considers it more serious than first placed; **[qualified]**
@@ -241,7 +283,11 @@ the existing `w_3d.wcs.crpix[2], crval[2], cdelt[2], ctype[2] = 1, 0, 1,
 'FILTER'` line must be kept after the `sub` call. Remove the bare except.
 Re-make any cube already produced.
 
-#### A2. `NATPXAR` is written but never read — HST fluxes ~0.6% too high  [PARTIAL]
+#### A2. `NATPXAR` is written but never read — HST fluxes ~0.6% too high  [FIXED, fallback remains]
+
+> 2026-09-29: now written on the bin <= 1 path too. The `.get('NATPXAR',
+> config)` fallback in `drivers.py` is still there, and pre-fix files are
+> reused by the skip-if-present logic — see Sect. 4b.
 
 > Now read (`drivers.py:167`); measured f814w ratio 0.993960 vs predicted
 > 0.99395. **Gap:** `bin_for_convolution` still returns before writing
@@ -297,7 +343,9 @@ signal are lost off the top/right edge.
 
 ### B. Convolution stage
 
-B3, B4, B5, B6, B7 are **[OPEN]**.
+B2-B6 are **[FIXED]** as of 2026-09-29 (gaps in Sect. 4b); B7 is **[OPEN]**.
+The original findings are kept below as the record of *why* the code is now
+as it is.
 
 #### B1. `binary_dilation` with a full-kernel square structuring element  [CRITICAL for usability] [FIXED]
 
@@ -377,7 +425,10 @@ failure mode, leaving the `MemoryError` cliff latent for any future
 configuration with a finer grid. **Do B1 before or together with B6, not
 after.**
 
-#### B2. `inspect_kernel` cannot see the failure it exists to catch  [OPEN]
+#### B2. `inspect_kernel` cannot see the failure it exists to catch  [FIXED, sum-magnitude gap]
+
+> 2026-09-29: `sum < 0` now raises in all three places, before normalising.
+> Remaining: nothing checks `|sum - 1|`, so a +0.50 kernel passes. See 4b.
 
 > Still normalises first, and the same pattern was copied into
 > `validation.check_psf_matching` and `check2_psf_matching.measure`. The
@@ -447,7 +498,7 @@ case is precisely the one it cannot catch.
 
 Fix: make a missing `PIXSCALE` a hard error.
 
-#### B4. Kernel glob is not master-scoped  [OPEN — now also feeds Check 2]
+#### B4. Kernel glob is not master-scoped  [FIXED 2026-09-29]
 
 `astrovello_cli_2.0.py:469` globs `kernel_*_to_*.fits`, while
 `rediscover_unmatched` (`:244`) correctly globs `kernel_*_to_{master}.fits`.
@@ -536,6 +587,11 @@ wrong astrometry.
 
 Fix: pop the SIP keys explicitly.
 
+> 2026-09-29: the author tried this and reverted it (see C4 for why that
+> test was not decisive). If C4's fix — strip S4G SIP at ingestion — is
+> adopted, C1 and C2 become moot for the current surveys, but C1's pop is
+> still the right defence for any future survey with a real SIP solution.
+
 #### C2. Re-attaching `-SIP` is a silent no-op when binning stripped the coefficients
 
 `bin_for_convolution:650-656` correctly deletes SIP coefficients (they are in
@@ -550,6 +606,39 @@ No exception. The requested correction silently does nothing, and the written
 header advertises a distortion it does not carry. Currently latent because
 S4G derives bin == 1 so the coefficients survive; it activates the moment
 `choose_bin_factor` gives S4G a factor > 1.
+
+#### C4. The S4G SIP coefficients appear spurious, and applying them warps the data  [OPEN, new 2026-09-29] [BLOCKER for S4G cubes only]
+
+Full measurements are in `fix_verification_2026-09-29.md` §4.
+
+- **astropy applies SIP even when CTYPE lacks `-SIP`**, and says so in its INFO
+  message ("astropy.wcs is using the SIP distortion coefficients"). Any
+  `WCS(header)` built from an S4G file applies them unless `w.sip = None`.
+- The two NGC 1087 mosaics share CRVAL and CD, differ by an **integer** CRPIX
+  offset (198, 507), and carry **different** SIP per channel. Without SIP the
+  irac1 -> irac2 mapping is an exact integer shift, i.e. a lossless copy. With
+  SIP it becomes a spatially varying warp, and irac1 (unconvolved) is
+  bilinearly interpolated.
+- Star matching irac1 <-> irac2: median 0.126" without SIP, 0.321" with. With
+  SIP the disagreement **grows with radius** (0.19" -> 0.54" -> 1.46" at
+  0-1.5' / 1.5-3' / 3-5'); without it, it is flat at ~0.1". That is the
+  signature of a spurious distortion. Most likely inherited from the BCD frames,
+  with the missing suffix deliberate — an inference, not documented.
+- Check 3 for irac1: 0.9916 (the 0.84%) with SIP; **1.0000, 0.00% scatter**
+  with SIP off on both sides.
+- **Science impact (irac2-master cubes only):** `reproject_to_reference`
+  re-attaches `-SIP` to the reference, so every HST/JWST band is placed through
+  irac2's SIP: 0.07-0.17" at 0.5-1.5', ~0.8" at 1.5-3'. That is a radial,
+  position-dependent colour error. HST+JWST (master `f2100w`) cubes are
+  unaffected.
+- Fix: strip SIP keys from S4G headers at ingestion (driver / `_prepare_image`)
+  and set `apply_sip_correction` off for S4G. Dropping only the suffix
+  re-attachment is not enough, because astropy still applies the keys.
+- **Before the dissertation cites it:** confirm in absolute terms against
+  Gaia DR3 at 3-5' from the centre, where SIP moves positions by 3.5-5.5". The
+  JWST cross-check has only ~8 stars within 1', where SIP is <= 0.15", and
+  cannot discriminate. It also hints at a ~-0.36" RA offset of S4G vs JWST
+  (n = 8, a hint only).
 
 #### C3. `reproject_interp` uses bilinear by default
 
@@ -686,11 +775,42 @@ it feeds the dissertation:
   (`diagnostico_astrometria.py` is a stub); `test_pypher_regularisation.py`
   is `pypher_regularisation_test.py`.
 
-**Untested hypothesis for `irac1` at 0.84% in Check 3:** the pre-reprojection
-S4G header has SIP coefficients without the `-SIP` suffix (astropy ignores
-them), while the reprojected header has `-SIP` re-attached. The same sky
-aperture lands on different pixels on the two sides — a check artefact, not a
-flux loss. Relates to C1/C2.
+**[corrected] Hypothesis for `irac1` at 0.84% in Check 3.** This section
+originally said astropy *ignores* SIP without the `-SIP` suffix. That premise is
+false: astropy applies it. The 0.84% is explained differently, in C4 and 4b.
+
+---
+
+## 4b. Verification of the second fix session (2026-09-29)
+
+Full detail in `fix_verification_2026-09-29.md`. 2.1, 2.2, B3, B4, B5 and B6
+all hold, and no new divergence between the three copies of the kernel check.
+Remaining gaps:
+
+- **A2 fallback.** [hardening — no current cube affected] `drivers.py:178-179` still does `.get('NATPXAR', config)`,
+  and its comment (bin <= 1 writes no NATPXAR) is now false. Combined with
+  skip-if-present, a pre-fix file silently brings back the 0.61% error. Make a
+  missing key raise (Invariant 8).
+- **B2 sum magnitude.** [hardening — current kernels sum to +1.0000] Measuring negative power on the raw kernel is
+  equivalent to the normalised one once `sum < 0` has raised: the metric does
+  not change under positive scaling. The unguarded half of the v1.x signature
+  is `|sum| = 0.5`. Add `abs(ksum - 1) > 0.01 -> fail` in all three places
+  (current kernels are +1.0000).
+- **B3 cosmetics.** [cosmetic] The sign check precedes the PIXSCALE check, so a v1.x kernel
+  gets the less actionable message. The WCS fallback turns a header with no
+  WCS into 3600"/px: it still raises, but confusingly.
+- **B5.** [cosmetic — comment wording only] NaN is right. The extra ~1-pixel ring it removes was previously
+  *corrupted* (bilinear mix of 0 and data), not good data. The "0.7%" in the
+  driver comment is from a synthetic 600 px test; label it.
+  `units_2_0.py:22` (`==0 -> NaN`) is now redundant for the border.
+- **B6.** [hardening — matters only if the master changes] Master sampled at 3.21 px/FWHM against a 3.0 constraint, still from
+  the Gaussian FWHM. Thin margin.
+
+**`test_sip_hypothesis.py` did not refute SIP.** It stripped SIP from the
+*after* file only, whose pixels had been placed with SIP, while astropy still
+applied SIP to the *before* file. That measures header/pixel self-consistency,
+so it could only get worse. The note at `reprojection_2_0.py:199-214`
+records this reasoning as a finding and should be revised (see C4).
 
 ---
 
@@ -698,19 +818,18 @@ flux loss. Relates to C1/C2.
 
 Reconciled with `audit_evaluation.md`. The author's one adjustment — promoting
 B2 to sit with A2, because a number cited as evidence in dissertation material
-depends on it — is adopted. Updated 2026-09-28 after the fix session.
+depends on it — is adopted. Updated 2026-09-29. **Only row 3 can change a number in a cube, and only if S4G is used.** Everything below it is backlog under the stopping rule in Sect. 0.
 
-| # | Item | Why |
-|---|---|---|
-| ~~1~~ | ~~**A1** — cube WCS~~ | **Done.** Regenerate the ngc1433 / ngc2903 cubes, which still carry `CDELT = 1.0` |
-| ~~2~~ | ~~**B1** — dilation~~ | **Done** |
-| 3 | **A2 gap** — write `NATPXAR` on every path | Reading it is done; writing it when bin <= 1 is not, and the fallback silently restores the 0.61% colour error |
-| 4 | **B2** — inspect before normalising | Still open, now in three places (`convolution_2_0`, `validation`, `check2_psf_matching`). Raise on `sum < 0` |
-| 5 | B3, B4, B5 (A3 done) | Correctness, cheap. B4 now also feeds the Check 2 gate |
-| 6 | **B6** — per-survey `min_blur` | Real compute win; run `--preflight_only` first (master drops to 3.1 px/FWHM) |
-| 7 | C1, C2 — SIP keys | Latent today, silently wrong astrometry when it activates |
-| 8 | Documentation reconciliation | The "raises" claims, the "no aliasing" claim (still in the `bin_for_convolution` docstring), the r50 tolerance and grid systematic, the `reproject_interp` order (C3); plus the session-report corrections in Sect. 4a (Check 3 table, B1 mechanism, 1.06, file names) |
-| 9 | Packaging (E1-E5) | When handing the code to someone else |
+| # | Item | Class | Why |
+|---|---|---|---|
+| ~~1~~ | ~~**A1** — cube WCS~~ | done | **Done.** Regenerate the ngc1433 / ngc2903 cubes, which still carry `CDELT = 1.0` |
+| ~~2~~ | ~~**B1** — dilation~~ | done | **Done** |
+| ~~3-6~~ | ~~A2 write path, B2, B3, B4, B5, B6~~ | done | **Done 2026-09-29** (uncommitted at time of writing) |
+| 3 | **C4** — strip S4G SIP at ingestion | **Blocker for S4G cubes only**; none for HST+JWST | Explains the irac1 0.84%, and removes a radial misregistration of every band in irac2-master cubes. Gaia check first if it goes in the dissertation |
+| 4 | **A2 fallback -> raise**; **B2 `abs(sum - 1)` gate** | Hardening — no current cube affected | Small; both close the last "fallback hides the defect" paths |
+| 5 | C1, C2 — SIP keys | Hardening (latent) | Largely moot for S4G after C4; keep C1's pop as a defence |
+| 6 | Documentation reconciliation | Needed for the dissertation text, not the cube | Session report 3.6 and the SIP note at `reprojection_2_0.py:199-214` (C4); the "raises" claims, the "no aliasing" claim (docstring already softened; check the methodology doc), the r50 tolerance and grid systematic, the `reproject_interp` order (C3); plus the session-report corrections in Sect. 4a (Check 3 table, B1 mechanism, 1.06, file names) |
+| 7 | Packaging (E1-E5) | Backlog | When handing the code to someone else |
 
 Two items are **decisions, not fixes**, and are the author's to make: whether
 the 15.5"-per-side border loss from the dilation is acceptable for these
@@ -737,8 +856,11 @@ Worth keeping in view when refactoring — these are the parts that are right:
   quotations tied to specific functions transfer to the dissertation chapter
   nearly as-is.
 - Writing provenance to the header and selecting on it rather than on
-  filenames. `NATPXAR` is now read; it only needs to be written on every
-  path (including bin 1) for the pattern to be complete.
+  filenames. `NATPXAR` is now read and written on every path; removing the
+  config fallback completes the pattern.
+- Testing a hypothesis on the real files and reverting when it failed (the SIP
+  deletion), and recording the reasoning in the code. The conclusion drawn
+  was wrong (C4), but the practice is right.
 
 ---
 
@@ -778,6 +900,12 @@ the data, but in the relationship between the code and its own documentation.
 
 Practical consequence: **treat a claim in `astrovello_pipeline_documentation.md`
 as a specification to be checked against the code, not as a description of it.**
+
+A second lesson, from C4: **a test that changes one side of a comparison
+measures consistency, not correctness.** Stripping a WCS term from the output
+alone can only show that the header no longer matches how the pixels were
+placed. To decide whether a WCS component is *right*, compare against an
+independent reference: the other channel, another survey, or Gaia.
 
 ---
 

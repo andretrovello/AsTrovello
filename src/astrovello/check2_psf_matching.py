@@ -169,14 +169,23 @@ def measure(src_path, tgt_path, kernel, scale):
     """All four metrics for one pair."""
     psf_src = fits.getdata(src_path).astype(np.float64)
     psf_tgt = fits.getdata(tgt_path).astype(np.float64)
-    kernel = kernel / kernel.sum()          # unit sum, as the pipeline does
+
+    # Negative power on the RAW kernel: after dividing by the sum, a
+    # sign-flipped kernel (sum < 0, 100% negative) reads as 100% positive.
+    ksum = kernel.sum()
+    neg_raw = negative_power_pct(kernel)
+    sign_flipped = ksum < 0
+
+    kernel = kernel / ksum                  # unit sum, as the pipeline does
     conv = fftconvolve(psf_src, kernel, mode='same')
     r50_t = enclosed_radius(psf_tgt, scale, 0.5)
     r80_t = enclosed_radius(psf_tgt, scale, 0.8)
     return {
         'ratio_r50': enclosed_radius(conv, scale, 0.5) / r50_t if r50_t else np.nan,
         'ratio_r80': enclosed_radius(conv, scale, 0.8) / r80_t if r80_t else np.nan,
-        'neg_pct': negative_power_pct(kernel),
+        'neg_pct': neg_raw,
+        'sign_flipped': sign_flipped,
+        'ksum': float(ksum),
         'D': aniano_D(psf_tgt, conv),
         'sampling': None,        # filled by the caller
     }
@@ -242,8 +251,11 @@ def main():
             fwhm_nom = NOMINAL_FWHM_ARCSEC.get(filt)
             sampling = fwhm_nom / scale_s if fwhm_nom else np.nan
 
-            ok = CRITERION_LO <= m['ratio_r50'] <= CRITERION_HI
+            ok = (CRITERION_LO <= m['ratio_r50'] <= CRITERION_HI
+                  and not m['sign_flipped'])
             verdict = "PASS" if ok else "FAIL"
+            if m['sign_flipped']:
+                verdict = f"FAIL (sum {m['ksum']:+.3f} < 0)"
             if ok and m['neg_pct'] > NEG_POWER_WARN_PCT:
                 verdict = "PASS (neg pwr high)"
 
