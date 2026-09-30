@@ -42,6 +42,7 @@ states what was expected, what was measured, and whether they agree.
 | A2 — HST pixel area | −0.61% on HST, 0% on IR | −0.604% / +0.000% | fixed |
 | A3 — crop off-by-one | +1 px per axis | 1276×1134 → 1277×1135 | fixed |
 | B1 — dilation cost | identical result, much faster | bit-identical, minutes → seconds | fixed |
+| Per-band convolution grid | kernel on the grid where it is applied | 4 grids, all kernels ~19.8″ extent | fixed later, see §9 |
 
 ---
 
@@ -707,6 +708,24 @@ shape : 13 x 1277 x 1135                      (was 1276 x 1134)
 All four corrections visible in one header: the two scales agree (A1), the
 dimensions are +1 per axis (A3), and the cube was produced through the fixed
 conversion (A2) and the fast dilation (B1).
+
+### This cube has since been superseded
+
+**`ngc1087_datacube_sci_1277x1135` must not be used.** A later round found
+that the four PHANGS-JWST NIRCam bands in it were convolved with kernels built
+on the MIRI grid — 3.6x too coarse for f200w, 1.8x for the long-wave bands.
+That is a colour error between NIRCam and every other band in the cube.
+
+The defect had been invisible because the grid guard in `create_convolvedFITS`
+had never once fired: PyPHER does not carry non-standard keys from its inputs,
+so `PIXSCALE` never reached a kernel, and the guard fell through its
+`k_px is None` branch on every band of every run. Making that branch fatal
+(the B3 fix above) is what exposed it.
+
+The replacement is **`ngc1087_datacube_sci_1109x1202`**, produced after the
+convolution grid was made a property of the band rather than of the survey.
+The change, its verification across five survey configurations, and the full
+accounting of the dimension change are in `per_band_grid_report.md`.
 
 ---
 

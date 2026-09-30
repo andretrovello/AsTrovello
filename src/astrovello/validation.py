@@ -125,9 +125,17 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
                 print(f"      {kern_path.name}: unparseable name, skipped")
             continue
 
-        matches = [p for p in psf_dir.glob('*.fits')
-                   if filt.upper() in p.stem.upper()
-                   and not p.name.startswith('master_')]
+        # PSFs cleaned onto a given grid are prefixed with that grid, so the
+        # same band can appear once per grid. Restrict to the one matching
+        # this kernel's grid, otherwise a band present on two grids would look
+        # ambiguous and be skipped.
+        prefix = f"{scale_master:.4f}_"
+        matches = [p for p in psf_dir.glob(f'{prefix}*.fits')
+                   if filt.upper() in p.stem.upper()]
+        if not matches:      # PSFs written before the per-grid naming
+            matches = [p for p in psf_dir.glob('*.fits')
+                       if filt.upper() in p.stem.upper()
+                       and not p.name.startswith('master_')]
         if len(matches) != 1:
             if verbose:
                 print(f"      {filt:>8}: {len(matches)} candidate source PSFs, "

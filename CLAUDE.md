@@ -35,18 +35,26 @@ that fixed A1, A2, A3, B1 and added the validation gates.
 which fixes hold, which gaps remain, and where the report is inconsistent
 (summarised in Section 4a below). `fix_verification_2026-09-29.md` checks the
 second fix session (2.1, 2.2, B3-B6) and resolves the irac1 0.84% (Section 4b).
+`per_band_grid_report.md` is the author's report of the per-band convolution
+grid change (B8), and `fix_verification_2026-09-30.md` verifies it (Section 4c).
 
 ---
 
-## 0. Current state and what "done" means (2026-09-29)
+## 0. Current state and what "done" means (2026-09-30)
 
-**Read this before proposing more fixes.** The audit cycle has converged. The
-first audit found errors in the output (A1 cube WCS 4800× off, A2 0.61% HST
-colour error, A3 lost edge pixels), and those are fixed. The second round found
-holes in the guards, now also fixed. The third round found **no errors in the
-fixes**, only hardening, plus one survey-specific issue (C4).
+**Read this before proposing more fixes.** The first audit found errors in the
+output (A1 cube WCS 4800× off, A2 0.61% HST colour error, A3 lost edge
+pixels), and those are fixed. The second round found holes in the guards, now
+also fixed. The third round found no errors in the fixes, only hardening, plus
+one survey-specific issue (C4). **Then making the B3 guard raise exposed B8**:
+the grid guard had never fired, and the NIRCam kernels were on the MIRI grid
+in every HST+JWST cube before 2026-09-30. B8 is fixed and verified (Sect. 4c).
+The claim previously made here, that no blocking fix remained for the
+HST+JWST cube, was wrong until then.
 
-- **HST+JWST cube (master `f2100w`): no blocking code fix remains.**
+- **HST+JWST cube (master `f2100w`): no blocking code fix remains** after B8.
+  The valid cube is `ngc1087_datacube_sci_1109x1202_Jy_per_pixel.fits`
+  (2026-09-30). The 1135x1277 cube (27 Sep) predates B8 and must not be used.
 - **Cubes with S4G (master `irac2`): one — C4**, a ~5-line fix. Its effect is
   ≤ 0.17" inside ~1.5′ (~10% of the PSF FWHM) and ~0.8" in the outer disc.
   It does not invalidate existing results.
@@ -110,7 +118,9 @@ checking the headers.
 ```
 Input/<SURVEY>/galaxies/<galaxy>/   science mosaics
 Input/<SURVEY>/PSF/                 raw PSFs/PRFs
-Input/<SURVEY>/PSF_CLEAN/           resampled PSFs (written by build_kernels)
+Input/<SURVEY>/PSF_CLEAN/           resampled PSFs (written by build_kernels),
+                                    one set per grid: <grid>_<psf>.fits and
+                                    master_<grid>_<psf>.fits (grid as %.4f)
 Output/PSF_Kernels/                 kernel_<filt>_to_<master>.fits
 Output/convolved_fits/<galaxy>/     convolved + master + unmatched bands
 Output/reprojected_files/<galaxy>/  reprojected, then *_Jy_per_pixel.fits
@@ -172,6 +182,11 @@ enforce one of them.
    `clean_psf(convolution_grid_arcsec=...)` (renamed from
    `target_pixel_scale_arcsec`, which wrongly suggested a link to the target
    PSF) and the guard in `pypher_kernel_creation`.
+   **The convolution grid is per BAND, not per survey** (B8): PHANGS-JWST
+   spans 0.0307" (NIRCam SW), 0.0630" (LW) and 0.1109" (MIRI). `build_kernels`
+   groups bands by native scale x bin and stamps `PIXSCALE` on each kernel
+   itself, because PyPHER drops it. Without the stamp the grid guard in
+   `create_convolvedFITS` has nothing to compare.
 
 2. **Convolution before reprojection.** The master (FWHM 1.72") on the final
    0.75"/px grid is at 2.29 px/FWHM — above Nyquist, so reprojecting an
@@ -197,6 +212,11 @@ enforce one of them.
 6. **The binning factor is a property of the TARGET, not the source survey.**
    It depends on which filter ends up master, so it must be derived per run
    (`choose_bin_factor`). The `config.py` value is a fallback only.
+   It is still one factor per survey, derived from `imgs[0]`. That is safe only
+   because PHANGS `miri` files sort before `nircam` (the coarsest band sets
+   the factor). See Sect. 4c. The masked border is **not** a function of the
+   bin factor: it is half the kernel's angular extent (~9.9" per side, set by
+   the 20" WebbPSF F2100W array), whatever the grid.
 
 7. **Information travels with the data.** Provenance goes in the header
    (`PSFTARGT`, `PSFMATCH`, `PSFRESID`, `NATPXAR`, `BINFACT`) and discovery
@@ -217,9 +237,10 @@ Findings from a full read-only audit (2026-09-17), reconciled against the
 author's response in `audit_evaluation.md`. Every quantitative claim below was
 verified against the real data in `Input/` or the real outputs in `Output/`.
 
-**Fix status (verified 2026-09-29, see Sects. 4a, 4b):** A1, A2, A3, B1, B2,
-B3, B4, B5, B6 **fixed** (A2 and B2 each with a small remaining gap, Sect. 4b).
-Open: B7, C1, C2, C3 (doc only), **C4 (new)**, D, E.
+**Fix status (verified 2026-09-30, see Sects. 4a, 4b, 4c):** A1, A2, A3, B1,
+B2, B3, B4, B5, B6, **B8** **fixed** (A2 and B2 each with a small remaining
+gap, Sect. 4b; B8 leftovers in Sect. 4c). Open: B7, C1, C2, C3 (doc only),
+C4, D, E.
 The line numbers below are from the audit and may have drifted. Fixes after
 2026-09-28 are uncommitted on `v2-dev/reproject_changes-audit` at the time of
 writing.
@@ -814,19 +835,72 @@ records this reasoning as a finding and should be revised (see C4).
 
 ---
 
+## 4c. B8 — per-band convolution grid (2026-09-30)
+
+Report in `per_band_grid_report.md`, verification in
+`fix_verification_2026-09-30.md`.
+
+**B8.** [BLOCKER for HST+JWST cubes — FIXED] Two defects surfaced together:
+
+1. **The grid guard had never fired.** `clean_psf` writes `PIXSCALE`, but
+   PyPHER writes the kernel and drops non-standard keys. So
+   `create_convolvedFITS` always took the `k_px is None` branch and skipped.
+   It only showed once B3 made that branch raise.
+2. **NIRCam kernels on the MIRI grid.** `derive_bin_factors`/`build_kernels`
+   built one grid per survey from `imgs[0]` (a MIRI file). The f200w kernels
+   were 3.6x too coarse and the LW kernels 1.8x, i.e. a NIRCam-vs-rest colour
+   error in every earlier HST+JWST cube. No magnitude is quoted: the
+   sky-aperture comparison is too noisy (7-30% scatter). Direction only:
+   NIRCam moved most.
+
+Fix: one grid per band (native x bin), master PSF cleaned once per grid,
+`PIXSCALE` stamped after PyPHER, Check 2 grouped by kernel `PIXSCALE`.
+Verified on HST-only, S4G-only, JWST-only, HST+JWST (12/12 kernels on the
+right grid, Check 2 12/12 PASS) and HST+JWST+S4G (13/13).
+
+**Cube shrinkage 1277x1135 -> 1202x1109 is correct, not a loss.** The binding
+band is **NIRCam LW, not f200w**. Its border grew by 4.28" = 38.6 master px.
+It binds both y edges (+38, -37), but only the right x edge (-23; MIRI was
+already binding there). x-left moved +3 px, consistent with the B5 NaN ring.
+Every band now loses the same ~9.9" per side. A per-band bin factor would not
+recover any of it (border is in arcsec); it would only save compute.
+
+Leftovers, none affecting the current cube:
+
+- [hardening] `derive_bin_factors` still uses `imgs[0]`. Use the largest
+  native scale in the survey, otherwise a fine first band undersamples MIRI.
+- [hardening] `rediscover_unmatched` and `preflight._check_grids` still assume
+  one grid per survey; the preflight table prints every JWST pair on 0.1109".
+- [hardening] Check 2 prints "skipped" when a grid's master is missing
+  (should raise, Invariant 8). The pre-per-grid-naming fallback in
+  `validation.check_psf_matching` is unreachable; remove it.
+- [hardening] `build_kernels` filters PSFs by `get_psf_filter_name` against a
+  set built from `get_sci_filter_name`. A naming mismatch would drop a band
+  silently.
+- [cosmetic/dissertation] standalone `check2_psf_matching.py` expects one
+  `master_*.fits` and now skips JWST; `pypher_regularisation_test.py:58`
+  hardcodes the old master name.
+- [documentation] the methodology doc still describes a per-survey loop, and
+  it presents the grid guard as working. The chapter should record that the
+  guard never fired before 2026-09-30.
+
+---
+
 ## 5. Suggested fix order
 
 Reconciled with `audit_evaluation.md`. The author's one adjustment — promoting
 B2 to sit with A2, because a number cited as evidence in dissertation material
-depends on it — is adopted. Updated 2026-09-29. **Only row 3 can change a number in a cube, and only if S4G is used.** Everything below it is backlog under the stopping rule in Sect. 0.
+depends on it — is adopted. Updated 2026-09-30. **With B8 done, only row 3 can change a number in a cube, and only if S4G is used.** Everything below it is backlog under the stopping rule in Sect. 0.
 
 | # | Item | Class | Why |
 |---|---|---|---|
 | ~~1~~ | ~~**A1** — cube WCS~~ | done | **Done.** Regenerate the ngc1433 / ngc2903 cubes, which still carry `CDELT = 1.0` |
 | ~~2~~ | ~~**B1** — dilation~~ | done | **Done** |
 | ~~3-6~~ | ~~A2 write path, B2, B3, B4, B5, B6~~ | done | **Done 2026-09-29** (uncommitted at time of writing) |
+| ~~B8~~ | ~~per-band convolution grid + PIXSCALE stamp~~ | done | **Done 2026-09-30**, blocker for HST+JWST. Remove the pre-B8 1135x1277 cube; update the methodology doc in the same commit |
 | 3 | **C4** — strip S4G SIP at ingestion | **Blocker for S4G cubes only**; none for HST+JWST | Explains the irac1 0.84%, and removes a radial misregistration of every band in irac2-master cubes. Gaia check first if it goes in the dissertation |
 | 4 | **A2 fallback -> raise**; **B2 `abs(sum - 1)` gate** | Hardening — no current cube affected | Small; both close the last "fallback hides the defect" paths |
+| 4b | B8 leftovers: `imgs[0]` in `derive_bin_factors` (-> max native), per-band grid in `rediscover_unmatched`/preflight, Check 2 skip -> raise | Hardening — no current cube affected | Sect. 4c |
 | 5 | C1, C2 — SIP keys | Hardening (latent) | Largely moot for S4G after C4; keep C1's pop as a defence |
 | 6 | Documentation reconciliation | Needed for the dissertation text, not the cube | Session report 3.6 and the SIP note at `reprojection_2_0.py:199-214` (C4); the "raises" claims, the "no aliasing" claim (docstring already softened; check the methodology doc), the r50 tolerance and grid systematic, the `reproject_interp` order (C3); plus the session-report corrections in Sect. 4a (Check 3 table, B1 mechanism, 1.06, file names) |
 | 7 | Packaging (E1-E5) | Backlog | When handing the code to someone else |
@@ -906,6 +980,12 @@ measures consistency, not correctness.** Stripping a WCS term from the output
 alone can only show that the header no longer matches how the pixels were
 placed. To decide whether a WCS component is *right*, compare against an
 independent reference: the other channel, another survey, or Gaia.
+
+A third, from B8: **a guard is not verified until it has been seen to fire.**
+The grid guard was reviewed and documented, yet it could never trigger,
+because PyPHER drops the key it read. When adding a guard, feed it one case
+that must fail. When a fallback branch is made fatal, expect it to expose
+whatever it was hiding.
 
 ---
 

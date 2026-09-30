@@ -209,11 +209,22 @@ def kernel_source_filter(kernel_path):
 
 def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
                   kernel_dir, master, r80, bin_factors, min_kernel_px):
-    """Clean the PSFs and generate the kernels, one grid per source survey.
+    """Clean the PSFs and generate the kernels, ONE GRID PER BAND.
+
+    The convolution grid is a property of the band, not of the survey. Within
+    PHANGS-JWST the native scales differ by a factor 3.6 (NIRCam short-wave
+    0.031", long-wave 0.063", MIRI 0.111"), so a single per-survey grid built
+    from an arbitrary `imgs[0]` produces kernels that are valid for one of
+    those scales and wrong for the others. That is the v1.x defect in another
+    form: a kernel generated on one grid and applied on another.
+
+    Each band therefore gets its PSFs cleaned onto the grid of its OWN science
+    image, and its own kernel. The master PSF is cleaned once per distinct
+    grid, since several bands usually share one.
 
     Returns the list of unmatched bands as (filter, survey, residual_arcsec).
     """
-    print("\n>>> Cleaning PSFs and generating kernels, one grid per survey...")
+    print("\n>>> Cleaning PSFs and generating kernels, one grid per band...")
 
     master_psf_raw = next(
         (p for p in psf_files
@@ -226,8 +237,6 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
         drivers["BASE"].get_survey(master_psf_raw)
     ].get_psf_pixel_scale(filter_name=master)
 
-    # Clear the kernel directory ONCE, before the loop. Inside the loop we use
-    # clear_dir=False, otherwise the second survey wipes the first one's kernels.
     if kernel_dir.exists():
         shutil.rmtree(kernel_dir)
     kernel_dir.mkdir(parents=True)
@@ -240,68 +249,103 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
         if not survey_imgs:
             continue
 
+        driver = drivers[survey]
         bin_factor = bin_factors.get(survey, 1)
-        grid = science_pixel_scale(survey_imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position) * bin_factor
-        print(f"\n>>> Survey {survey}: convolution grid = {grid:.4f} arcsec/px "
-              f"(native x bin {bin_factor})")
 
         clean_dir = input_dir / survey / "PSF_CLEAN"
         if clean_dir.is_dir():
             shutil.rmtree(clean_dir)
         clean_dir.mkdir(parents=True)
 
-        # The MASTER goes first: it fixes the array size used as `output_size`
-        # for every other PSF on this grid. One copy per grid, since each
-        # source survey convolves on its own.
-        out_master = clean_dir / f"master_{master_psf_raw.name}"
-        clean_psf(
-            input_file=master_psf_raw,
-            output_file=out_master,
-            psf_pixel_scale_arcsec=master_psf_scale,
-            convolution_grid_arcsec=grid,
-            max_extent_arcsec=0,    # whole PRF; cheap on a binned grid
-        )
-        if not out_master.exists():
-            raise RuntimeError(f"clean_psf failed for the master in {survey}.")
+        # --- group this survey's bands by their convolution grid -----------
+        # Bands that share a native scale share a grid, so the master PSF and
+        # the PyPHER call are done once per group rather than once per band.
+        by_grid = {}
+        for img in survey_imgs:
+            filt = driver.get_sci_filter_name(img.name)
+            native = science_pixel_scale(img, hdu_ext=driver.get_hdu_sci_position)
+            grid = round(native * bin_factor, 6)
+            by_grid.setdefault(grid, []).append(filt)
 
-        target_size = fits.getdata(out_master).shape[0]
-        cleaned = {master: out_master}
+        if len(by_grid) > 1:
+            print(f"\n>>> Survey {survey}: {len(by_grid)} distinct grids "
+                  f"(native scales differ between instruments)")
 
-        for psf_path in [p for p in psf_files
-                         if drivers["BASE"].get_survey(p) == survey]:
-            driver = drivers[survey]
-            filt = driver.get_psf_filter_name(filename=str(psf_path))
-            if filt == master:
-                continue    # already handled above
+        for grid, filters_here in sorted(by_grid.items()):
+            print(f"\n>>> {survey} @ {grid:.4f} arcsec/px (native x bin "
+                  f"{bin_factor}): {sorted(filters_here)}")
 
+            # The MASTER goes first: it fixes the array size used as
+            # `output_size` for every other PSF on this grid.
+            out_master = clean_dir / f"master_{grid:.4f}_{master_psf_raw.name}"
             clean_psf(
-                input_file=psf_path,
-                output_file=clean_dir / psf_path.name,
-                psf_pixel_scale_arcsec=driver.get_psf_pixel_scale(filter_name=filt),
+                input_file=master_psf_raw,
+                output_file=out_master,
+                psf_pixel_scale_arcsec=master_psf_scale,
                 convolution_grid_arcsec=grid,
                 max_extent_arcsec=0,
-                output_size=target_size,
             )
-            cleaned[filt] = clean_dir / psf_path.name
+            if not out_master.exists():
+                raise RuntimeError(
+                    f"clean_psf failed for the master at {grid:.4f} in {survey}.")
 
-        if len(cleaned) < 2:
-            print(f"    (no source PSF in {survey}; no kernel to generate)")
-            continue
+            target_size = fits.getdata(out_master).shape[0]
+            cleaned = {master: out_master}
 
-        commands, skipped = pypher_kernel_creation(
-            cleaned_psf_by_filter=cleaned,
-            psf_master_name=master,
-            output_dir=kernel_dir,
-            grid_scale_arcsec=grid,
-            clear_dir=False,
-            psf_widths=r80,
-            min_kernel_px=min_kernel_px,
-        )
-        for cmd in commands:
-            print(f"----- Running: {cmd} -----")
-            subprocess.run(cmd, shell=True, check=True)
+            for psf_path in [p for p in psf_files
+                             if drivers["BASE"].get_survey(p) == survey]:
+                filt = driver.get_psf_filter_name(filename=str(psf_path))
+                if filt == master or filt not in filters_here:
+                    continue
 
-        unmatched.extend((filt, survey, resid) for filt, resid in skipped)
+                out_psf = clean_dir / f"{grid:.4f}_{psf_path.name}"
+                clean_psf(
+                    input_file=psf_path,
+                    output_file=out_psf,
+                    psf_pixel_scale_arcsec=driver.get_psf_pixel_scale(filter_name=filt),
+                    convolution_grid_arcsec=grid,
+                    max_extent_arcsec=0,
+                    output_size=target_size,
+                )
+                cleaned[filt] = out_psf
+
+            if len(cleaned) < 2:
+                print(f"    (no source PSF on this grid; no kernel to generate)")
+                continue
+
+            commands, skipped = pypher_kernel_creation(
+                cleaned_psf_by_filter=cleaned,
+                psf_master_name=master,
+                output_dir=kernel_dir,
+                grid_scale_arcsec=grid,
+                clear_dir=False,
+                psf_widths=r80,
+                min_kernel_px=min_kernel_px,
+            )
+            for cmd in commands:
+                print(f"----- Running: {cmd} -----")
+                subprocess.run(cmd, shell=True, check=True)
+
+            # PyPHER writes the kernel with its own header and does not carry
+            # over non-standard keys from the input PSFs, so PIXSCALE does not
+            # survive. Stamp it here, with the grid this kernel was built for.
+            #
+            # Without this the grid guard in create_convolvedFITS never had a
+            # scale to compare and fell through its `k_px is None` branch every
+            # time: the protection against the v1.x grid mismatch had never
+            # once fired. It only became visible when that branch was made a
+            # hard error.
+            for filt in filters_here:
+                kern = kernel_dir / f"kernel_{filt}_to_{master}.fits"
+                if not kern.exists():
+                    continue
+                with fits.open(kern, mode='update') as hdul:
+                    hdul[0].header['PIXSCALE'] = (
+                        float(grid),
+                        'arcsec/px; grid this kernel is valid on')
+                    hdul.flush()
+
+            unmatched.extend((filt, survey, resid) for filt, resid in skipped)
 
     n_kernels = len(list(kernel_dir.glob(f"kernel_*_to_{master}.fits")))
     print(f"\n>>> Kernel processing completed! ({n_kernels} kernels)")
@@ -586,18 +630,34 @@ def main():
                 psf_clean_dir = input_dir / survey / 'PSF_CLEAN'
                 if not psf_clean_dir.is_dir():
                     continue
-                masters = sorted(psf_clean_dir.glob('master_*.fits'))
-                if len(masters) != 1:
-                    print(f"==> CHECK 2 skipped for {survey}: expected one "
-                          f"master PSF in {psf_clean_dir}, found {len(masters)}")
-                    continue
                 own_filters = {f.lower()
                                for f in survey_filters.get(survey, [])}
                 survey_kernels = [k for k in kernel_files
                                   if kernel_source_filter(k) in own_filters]
                 if not survey_kernels:
                     continue
-                check_psf_matching(survey_kernels, psf_clean_dir, masters[0])
+
+                # Kernels are grouped by the grid they were built on, because
+                # bands within one survey can have different native scales and
+                # each grid has its own cleaned master PSF.
+                by_grid = {}
+                for k in survey_kernels:
+                    kpx = fits.getheader(k).get('PIXSCALE')
+                    if kpx is None:
+                        raise SystemExit(
+                            f"Kernel {k.name} carries no PIXSCALE, so the "
+                            f"check cannot tell which grid it belongs to. "
+                            f"Regenerate with --create_kernel.")
+                    by_grid.setdefault(round(float(kpx), 4), []).append(k)
+
+                for grid, kerns in sorted(by_grid.items()):
+                    masters = sorted(psf_clean_dir.glob(f'master_{grid:.4f}_*.fits'))
+                    if len(masters) != 1:
+                        print(f"==> CHECK 2 skipped for {survey} @ "
+                              f"{grid:.4f} arcsec/px: expected one master PSF, "
+                              f"found {len(masters)}")
+                        continue
+                    check_psf_matching(kerns, psf_clean_dir, masters[0])
         elif args.skip_checks:
             print("==> CHECK 2 SKIPPED by --skip_checks")
 
