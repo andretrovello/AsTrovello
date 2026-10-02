@@ -127,7 +127,7 @@ def discover_jansky_files(
 def create_data_cube(
     jansky_files_dict: dict, ordered_filters: list,
     reference_path: Path, drivers: dict, output_filename: Path,
-    apply_mask: bool = True, n_sigma: float = 3, padding: int = 50,
+    apply_mask: bool = False, n_sigma: float = 3, padding: int = 50,
     sky_subtraction: bool = True,
 ) -> tuple:
     print('\nInitiating hypercube creation...')
