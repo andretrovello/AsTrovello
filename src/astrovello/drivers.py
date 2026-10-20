@@ -1,0 +1,360 @@
+"""
+Survey drivers for the AsTrovello pipeline.
+
+`Base_Driver` implements generic behavior shared by every survey,
+reading its parameters from ``SURVEY_CONFIG`` in :mod:`config`. Each
+survey gets a thin subclass that points at its own config entry, and
+can override any method individually if a survey's data needs
+genuinely different logic rather than just different constants.
+
+Examples
+--------
+>>> driver = get_driver('PHANGS')
+>>> galaxy, filt = driver.parse_filename('ngc2903_mosaic_f814w.fits')
+>>> driver.get_pixel_scale(filt)
+0.0395
+"""
+
+from pathlib import Path
+import numpy as np
+from scipy.ndimage import label, binary_dilation
+from astropy.convolution import convolve_fft
+from astropy.wcs.utils import proj_plane_pixel_area
+from astropy.wcs import WCS
+from astropy.io import fits
+
+# ================================= Base Class =================================
+class BASE_Driver:
+    def __init__(self, config_dict: dict):
+        self.config = config_dict
+
+    def get_files(self, dir_path: Path, mode: str) -> list:
+        suffix_key = f"{mode}_glob"
+        
+        if suffix_key in self.config:
+            # O f-string no glob permite injetar variáveis caso o sufixo use o nome da galáxia!
+            pattern = self.config[suffix_key]
+            return list(dir_path.glob(pattern))
+            
+        raise ValueError(f"Mode '{mode}' not configured for {self.__class__.__name__}.")
+
+    def get_psf_filter_name(self, filename: str) -> str:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_psf_filter_name().")
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_sci_filter_name().")
+
+    def get_survey(self, file_path: Path) -> str:
+        AVAILABLE_SURVEYS = self.config.keys()
+        for survey in AVAILABLE_SURVEYS:
+            if survey in str(file_path):
+                return survey
+
+    def get_pixel_scale(self, filter_name: str) -> float:
+        # Padrão genérico: se for um valor simples no dicionário, já resolve aqui no pai!
+        return self.config["pixel_scale_arcsec"]
+
+    @property
+    def get_binned_factor(self) -> int:
+        return self.config.get("binned_factor", 1)
+
+    def get_psf_pixel_scale(self, filter_name: str) -> float:
+    # Pega a escala nativa do survey/canal e divide pelo binned_factor
+        raw_scale = self.get_pixel_scale(filter_name)
+        return raw_scale / self.get_binned_factor
+
+    @property
+    def get_sip(self) -> bool:
+        return self.config.get("apply_sip_correction", False)
+
+    def convolve(self, img_data: np.ndarray, kernel: np.ndarray, kernel_size: int) -> np.ndarray:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement convolve().")
+
+    def get_galaxy_name(self, filename: str) -> str:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_galaxy_name().")
+
+    def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_invalid_mask().")
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        raise NotImplementedError(f"{self.__class__.__name__} must implement convert2Jansky().")
+    
+    @property
+    def get_convolution_bin_factor(self) -> int:
+        return int(self.config.get("convolution_bin_factor", 1))
+
+    @property
+    def get_hdu_sci_position(self) -> int:
+        # Science-image HDU index. JWST mosaics use 1; most others use 0.
+        return int(self.config.get("hdu_sci_position", 0))
+    
+# ================================= PHANGS Class =================================
+class PHANGS_Driver(BASE_Driver):
+    """Inherits functions from BASE_Driver."""
+    
+    def get_psf_filter_name(self, filename: str) -> str:
+        return Path(filename).name.replace('.fits', '').split('_')[-1].lower()
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        # hlsp_phangs-hst_hst_wfc3-uvis_<galaxy>_<filter>_v1_exp-drc-sci.fits
+        return Path(filename).name.split('_')[5].lower()
+
+    def get_galaxy_name(self, filename: str) -> str:
+        gal_name = Path(filename).name.split('_')[4].lower()
+        return gal_name.replace('mosaic', '')
+
+    def convolve(self, img_data, kernel, kernel_size):
+        # o array ja chega com invalidos marcados como NaN (create_convolvedFITS)
+        img_nan  = img_data.astype(np.float32, copy=True)
+        nan_mask = np.isnan(img_nan)
+
+        border_seed = np.zeros_like(nan_mask)
+        border_seed[0, :]  = nan_mask[0, :]
+        border_seed[-1, :] = nan_mask[-1, :]
+        border_seed[:, 0]  = nan_mask[:, 0]
+        border_seed[:, -1] = nan_mask[:, -1]
+
+        labeled, _ = label(nan_mask)
+        border_labels = set(labeled[border_seed & nan_mask])
+        border_mask = np.isin(labeled, list(border_labels))
+
+        img_to_conv = img_nan.copy()
+        img_to_conv[border_mask] = 0.0
+
+        convolved_img = convolve_fft(
+            img_to_conv, kernel,
+            normalize_kernel=False, nan_treatment='interpolate',
+            preserve_nan=False, allow_huge=True,
+        )
+
+        # A flat k x k square structuring element is mathematically identical
+        # to k//2 iterations of a 3x3 one, but scipy builds the k x k footprint
+        # explicitly: with a 281 px kernel that is ~1400x slower and can raise
+        # MemoryError. The iterations form is exact, not an approximation.
+        expanded_border = binary_dilation(border_mask,
+                                          structure=np.ones((3, 3)),
+                                          iterations=max(kernel_size // 2, 1))
+        # Blank the border with NaN, not 0.0. A zero is ambiguous: it is
+        # indistinguishable from a genuine null flux, and `mask_final =
+        # isfinite(...)` in create_data_cube (the --apply_mask off path) would
+        # then admit the border as valid data. NaN says "no data" and every
+        # downstream consumer already understands it.
+        #
+        # The cost is that reproject_interp spreads NaN into neighbouring
+        # output pixels, so the unusable border grows slightly on resampling
+        # (measured: 0.7% of the field for a 10 px border on a 600 px image).
+        # That is the honest accounting of a region that carries no data,
+        # rather than a silent zero that looks like a measurement.
+        convolved_img[expanded_border] = np.nan
+
+        return convolved_img
+    
+    def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
+        return img_data == 0
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        new_header = fits_header.copy()
+        survey_unit = self.config["sci_unit"]
+
+        if fits_header.get('BUNIT') == survey_unit:
+            # PHOTFNU converte electrons/s -> Jy assumindo UM PIXEL NATIVO do
+            # PHANGS. Esse arquivo já pode ter sido reprojetado pra grade de
+            # outro survey (S4G) antes de chegar aqui — então não dá pra
+            # multiplicar direto, como se o pixel ainda fosse o nativo.
+            #
+            # Correção: primeiro obtém uma densidade de área genuína
+            # (Jy/arcsec², usando a área do pixel NATIVO), depois multiplica
+            # pela área real do pixel ATUAL do header — o mesmo esquema de
+            # duas etapas que o S4G já usa com MJy/sr, abaixo.
+            # NATPXAR carries the TRUE native pixel area, measured from the
+            # WCS before binning (see bin_for_convolution). It exists exactly
+            # so this conversion stops trusting the config constant: the
+            # drizzled PHANGS-HST mosaics are at 0.039620"/px while config
+            # says 0.0395, and dividing by the smaller area inflated the five
+            # HST bands by 0.61% - a pure COLOUR term, since the IR bands are
+            # unaffected. The config value remains the fallback for images
+            # that were never binned (bin_for_convolution returns early when
+            # factor <= 1 and writes no NATPXAR).
+            native_pixel_area_arcsec2 = fits_header.get(
+                'NATPXAR', self.config["pixel_scale_arcsec"] ** 2)
+            surface_brightness = (fits_data * fits_header['PHOTFNU']) / native_pixel_area_arcsec2
+
+            w = WCS(fits_header)
+            pixel_area_arcsec2 = proj_plane_pixel_area(w) * 3600**2
+
+            new_data = surface_brightness * pixel_area_arcsec2
+            new_header['BUNIT'] = 'Jy/pixel'
+            print(f"\t\tPHANGS-HST: Converted using PHOTFNU, rescaled to actual pixel area "
+                f"({pixel_area_arcsec2:.6f} arcsec2/px).")
+            return new_data, new_header
+        else:
+            print(f"\t\tUnit info is different than PHANGS-HST standard ({survey_unit}). Please check respective header. Returning original data.")
+            return fits_data, fits_header
+
+# ================================= PHANGS Class =================================
+class PHANGS_JWST_Driver(BASE_Driver):
+    """Inherits functions from BaseDriver."""
+
+    def get_instrument_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        return Path(filename).name.replace('.fits', '').split('_')[3].lower()
+    
+    def get_psf_filter_name(self, filename: str) -> str:
+        return Path(filename).name.replace('.fits', '').split('_')[-1].lower()
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        return Path(filename).name.split('_')[5].lower()
+
+    def get_galaxy_name(self, filename: str) -> str:
+        # hlsp_phangs-jwst_jwst_<instrument>_<galaxy>_<filter>_v1p1_img.fits
+        gal_name = Path(filename).name.split('_')[4].lower()
+        return gal_name.replace('mosaic', '')
+
+    def get_pixel_scale(self, filter_name: str) -> float:
+        # Padrão genérico: se for um valor simples no dicionário, já resolve aqui no pai!
+        return self.config["pixel_scale_arcsec"][filter_name]
+
+    def convolve(self, img_data, kernel, kernel_size):
+        # o array ja chega com invalidos marcados como NaN (create_convolvedFITS)
+        img_nan  = img_data.astype(np.float32, copy=True)
+        nan_mask = np.isnan(img_nan)
+
+        border_seed = np.zeros_like(nan_mask)
+        border_seed[0, :]  = nan_mask[0, :]
+        border_seed[-1, :] = nan_mask[-1, :]
+        border_seed[:, 0]  = nan_mask[:, 0]
+        border_seed[:, -1] = nan_mask[:, -1]
+
+        labeled, _ = label(nan_mask)
+        border_labels = set(labeled[border_seed & nan_mask])
+        border_mask = np.isin(labeled, list(border_labels))
+
+        img_to_conv = img_nan.copy()
+        img_to_conv[border_mask] = 0.0
+
+        convolved_img = convolve_fft(
+            img_to_conv, kernel,
+            normalize_kernel=False, nan_treatment='interpolate',
+            preserve_nan=False, allow_huge=True,
+        )
+
+        # A flat k x k square structuring element is mathematically identical
+        # to k//2 iterations of a 3x3 one, but scipy builds the k x k footprint
+        # explicitly: with a 281 px kernel that is ~1400x slower and can raise
+        # MemoryError. The iterations form is exact, not an approximation.
+        expanded_border = binary_dilation(border_mask,
+                                          structure=np.ones((3, 3)),
+                                          iterations=max(kernel_size // 2, 1))
+        # Blank the border with NaN, not 0.0. A zero is ambiguous: it is
+        # indistinguishable from a genuine null flux, and `mask_final =
+        # isfinite(...)` in create_data_cube (the --apply_mask off path) would
+        # then admit the border as valid data. NaN says "no data" and every
+        # downstream consumer already understands it.
+        #
+        # The cost is that reproject_interp spreads NaN into neighbouring
+        # output pixels, so the unusable border grows slightly on resampling
+        # (measured: 0.7% of the field for a 10 px border on a 600 px image).
+        # That is the honest accounting of a region that carries no data,
+        # rather than a silent zero that looks like a measurement.
+        convolved_img[expanded_border] = np.nan
+
+        return convolved_img
+    
+    def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
+        # PHANGS-JWST mosaics mark off-footprint pixels with exact 0, like HST
+        # (confirmed on the NGC 1087 MIRI mosaics: 0 NaN, ~1.5M exact zeros in
+        # the tilted-frame border). ~isfinite would leave those zeros in the
+        # convolution and contaminate the border. The `convolve` method below
+        # separates the border frame (flooded from the edge) from any genuine
+        # interior zeros, so == 0 here is safe.
+        return img_data == 0
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        # JWST (PHANGS-JWST) mosaics are in MJy/sr, a surface brightness -
+        # NOT electrons/s. The conversion is therefore identical to S4G's:
+        # multiply by the pixel solid angle read from the WCS. This is grid-
+        # independent, so it stays correct after the image is reprojected onto
+        # the master grid. Do NOT use PHOTFNU here (that is the HST route, and
+        # the JWST headers do not even carry that keyword).
+        new_header = fits_header.copy()
+        new_data = fits_data.copy()
+        survey_unit = self.config["sci_unit"]
+
+        if fits_header.get('BUNIT') == 'MJy/sr':
+            w = WCS(fits_header)
+            pixel_area_deg2 = proj_plane_pixel_area(w)
+            pixel_area_sr = pixel_area_deg2 * (np.pi / 180) ** 2
+
+            new_data = new_data * 1e6 * pixel_area_sr
+            new_header['BUNIT'] = 'Jy/pixel'
+
+            pixel_area_arcsec2 = pixel_area_deg2 * (3600 ** 2)
+            print(f"\t\tPHANGS-JWST: Converted from MJy/sr using true WCS area "
+                  f"({pixel_area_arcsec2:.4f} arcsec2/px).")
+            return new_data, new_header
+        else:
+            print(f"\t\tUnit info is different than PHANGS-JWST standard "
+                  f"({survey_unit}). Please check respective header. "
+                  f"Returning original data.")
+            return fits_data, fits_header
+
+
+# ================================= S4G Class =================================
+class S4G_Driver(BASE_Driver):
+    def get_psf_filter_name(self, filename: str) -> str:
+        if 'IRAC1' in filename: return 'irac1'
+        if 'IRAC2' in filename: return 'irac2'
+        return 'unknown'
+
+    def get_sci_filter_name(self, filename: str) -> str:
+        # NGC1087.phot.<channel>.fits
+        channel = Path(filename).name.split('.')[-2]
+        return f'irac{channel}'
+
+    def get_galaxy_name(self, filename: str) -> str:
+        return Path(filename).name.split('.')[0].lower()
+
+    def get_pixel_scale(self, filter_name: str) -> float:
+        channel = 1 if filter_name == 'irac1' else 2
+        return self.config["pixel_scale_arcsec"][channel]
+
+    def convolve(self, img_data: np.ndarray, kernel: np.ndarray, kernel_size: int) -> np.ndarray:
+        nan_mask_original = np.isnan(img_data)
+
+        convolved_img = convolve_fft(
+            img_data, kernel,
+            normalize_kernel=False, nan_treatment='fill', fill_value=0.0,
+            preserve_nan=False, allow_huge=True,
+        )
+
+        # See the note in PHANGS_Driver.convolve: k//2 iterations of a 3x3
+        # element is identical to a flat k x k element, and vastly cheaper.
+        expanded_nan_mask = binary_dilation(nan_mask_original,
+                                            structure=np.ones((3, 3)),
+                                            iterations=max(kernel_size // 2, 1))
+        convolved_img[expanded_nan_mask] = np.nan
+
+        return convolved_img
+    
+    def get_invalid_mask(self, img_data: np.ndarray) -> np.ndarray:
+        return np.isnan(img_data)
+
+    def convert2Jansky(self, fits_data: np.ndarray, fits_header: fits.Header) -> tuple[np.ndarray, fits.Header]:
+        new_header = fits_header.copy()
+        new_data = fits_data.copy()
+        survey_unit = self.config["sci_unit"]
+        if fits_header.get('BUNIT') == 'MJy/sr': 
+            w = WCS(fits_header)
+            pixel_area_deg2 = proj_plane_pixel_area(w)
+            pixel_area_sr = pixel_area_deg2 * (np.pi / 180)**2
+            
+            new_data = new_data * 1e6 * pixel_area_sr
+            new_header['BUNIT'] = 'Jy/pixel'
+            
+            pixel_area_arcsec2 = pixel_area_deg2 * (3600**2)
+            print(f"\t\tS4G: Converted using true WCS area ({pixel_area_arcsec2:.4f} arcsec2/px).")
+            return new_data, new_header
+        else: 
+            print(f"\t\tUnit info is different than S4G standard ({survey_unit}). Please check respective header. Returning original data.")
+            return fits_data, fits_header

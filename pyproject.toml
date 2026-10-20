@@ -1,42 +1,42 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "astrovello"
-version = "0.1.2"
+version = "2.0.0"
 authors = [
   { name="André Almeida Trovello", email="andretrovello@usp.br" },
 ]
-license = {text = "MIT"} 
-description = "A framework for galaxy morphology and non-parametric decomposition."
+license = "MIT"
+license-files = ["LICENSE"]
+description = "Multi-survey (PHANGS-HST, PHANGS-JWST, S4G) PSF-matched datacubes in Jy/pixel for spatially-resolved SED fitting."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.0",
     "astropy>=6.0",
     "scipy>=1.10",
-    "matplotlib>=3.5",
     "pandas>=2.0",
     "photutils>=1.13",
     "reproject>=0.14",
-    "regions>=0.10",
-    "scikit-image>=0.20",
-    "tqdm",
-    "psutil",
-    "pyyaml",
     "pypher>=0.7.3",
-    "pyreadr>=0.5.4",
-    "rasterio",
-    "shapely",
-    "dask",
-    "zarr"
 ]
+
+[project.urls]
+Repository = "https://github.com/andretrovello/AsTrovello"
+Issues = "https://github.com/andretrovello/AsTrovello/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Only tests/ holds tests. scripts/forensics/ has test_sip_hypothesis.py and
+# pypher_regularisation_test.py, which match pytest's default patterns and
+# have import-time side effects (a global warnings filter, matplotlib).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.scripts]
-astrovello = 'astrovello.astrovello_cli:main'
-astrovello-batch = 'astrovello.batch_runner:main'
+astrovello = "astrovello.astrovello_cli:main"
+astrovello-check-psf = "astrovello.check2_psf_matching:main"
+astrovello-check-flux = "astrovello.check3_flux_conservation:main"

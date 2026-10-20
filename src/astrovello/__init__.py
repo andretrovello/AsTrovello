@@ -1,31 +1,21 @@
-# __init__.py
+"""
+AsTrovello - multi-survey datacube construction for spatially-resolved SED
+fitting.
 
-from .alignment import S4G2PHANGS_reproject
+The pipeline is run from the command line, from a project directory that
+holds an `Input/` folder; `Output/` is created next to it:
 
-from .convolution import (
-    calculaFWHM_radial_profile,
-    final_clean_psf,
-    pypher_kernel_creation,
-    convolved_dict,
-    create_convolvedFITS,
-)
+    cd /path/to/project      # contains Input/<SURVEY>/...
+    astrovello --galaxy ngc1087 --create_kernel
 
-from .units import convert2Jansky
+The stages are importable from their modules (`astrovello.convolution`,
+`astrovello.reprojection`, `astrovello.units`, `astrovello.cube`, ...).
+Nothing is imported here, so `import astrovello` stays cheap.
+"""
 
-from .mask import (
-    phangs_intersection_mask,
-    soma_img,
-    mask,
-    mask_after_sky_sub
-)
+from importlib.metadata import PackageNotFoundError, version
 
-from .cube import (
-    create_data_cube,
-    create_cutout,
-    sky_level
-)
-
-from .utils import (
-    get_filters,
-    log_memory_usage,
-)
+try:
+    __version__ = version("astrovello")
+except PackageNotFoundError:        # running from a source tree, not installed
+    __version__ = "unknown"
