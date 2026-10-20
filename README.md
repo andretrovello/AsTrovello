@@ -5,175 +5,169 @@
 ## AsTrovello
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-**AsTrovello** is a Python library for multi-wavelength galaxy data analysis. It integrates high-resolution photometry from **PHANGS (HST)** with mid-infrared data from **S4G (Spitzer/IRAC)**, providing tools for image alignment, PSF homogenization, unit conversion, and 3D hypercube creation.
+**AsTrovello** builds multi-survey datacubes of a galaxy for spatially-resolved
+SED fitting. It takes **PHANGS-HST**, **PHANGS-JWST** and **S4G (Spitzer/IRAC)**
+imaging and produces a single FITS cube in **Jy/pixel**, at a common angular
+resolution, on a common pixel grid.
 
 ---
 
-## Main Features
+## What it does
 
-* **Image Alignment:** Reprojects S4G images onto the HST pixel grid (conserving surface brightness).
-* **PSF Homogenization:** Calculates FWHM and generates convolution kernels via **PyPHER** to match the resolution of different filters to a common Master PSF.
-* **Unit Standardization:** Converts `ELECTRONS/S` (HST) and `MJy/sr` (Spitzer) to `Jy/pixel`.
-* **Hypercube Creation:** Builds a 3D FITS hypercube (RA, Dec, Filter) with automated sky masking and spatial bounding box cropping.
+1. **PSF matching and convolution.** Every band is degraded to the resolution of
+   the worst-resolved band (the *master*, chosen by the r80 of its PSF).
+   Kernels are built with **PyPHER** on the grid where they are applied.
+2. **Reprojection.** Every band is resampled onto the master's pixel grid.
+3. **Unit conversion.** `ELECTRONS/S` (HST), `MJy/sr` (JWST, Spitzer) to `Jy/pixel`.
+4. **Datacube.** Bands are stacked by wavelength, sky-subtracted, masked and cropped.
 
----
+Two validation gates abort the run on failure: PSF matching (r50 ratio within
+5%) after the kernels are built, and flux conservation (< 1%) after reprojection.
 
-## Data Sources
-
-The pipeline is designed to work with the following public datasets:
-
-**S4G (Spitzer):** https://irsa.ipac.caltech.edu/data/SPITZER/S4G/
-```
-└── <target>.phot.1.fits and <target>.phot.2.fits
-```
-
-**PHANGS (HST):** https://archive.stsci.edu/hlsp/phangs
-```
-└── hlsp_phangs-hst_hst_wfc3-uvis_<target>_<filter>_v1_exp-drc-sci.fits
-```
+The pipeline trusts the input WCS: it **reprojects**, it does not measure or
+correct astrometric offsets between surveys.
 
 ---
 
 ## Installation
 
-AsTrovello requires Python >= 3.10 and is recommended to run inside a Conda environment on Linux.
+Python >= 3.10. A dedicated Conda environment is recommended.
 
-**From PyPI:**
 ```bash
-pip install astrovello
+conda create -n astrovello python=3.11
+conda activate astrovello
+pip install git+https://github.com/andretrovello/AsTrovello.git
 ```
 
-**From GitHub (latest development version):**
+From a local clone (editable, for development):
+
 ```bash
-pip install git+https://github.com/your-username/AsTrovello.git
+git clone https://github.com/andretrovello/AsTrovello.git
+cd AsTrovello
+pip install -e .
 ```
 
-**Setting up a dedicated environment:**
-```bash
-conda create -n <env_name> python=3.10
-conda activate <env_name>
-pip install astrovello
-```
+This installs three commands: `astrovello` (the pipeline),
+`astrovello-check-psf` and `astrovello-check-flux` (standalone validation
+reports). PyPHER is installed as a dependency and is called as the `pypher`
+command, so run AsTrovello with its environment activated.
 
 ---
 
-## How to Run the Command Line Interface (CLI)
+## Running
 
-AsTrovello can be executed as a CLI using
+AsTrovello works on a **project directory** of your choice. Put your data in an
+`Input/` folder there and run the command from that directory; the pipeline
+builds `Output/` next to it.
+
+```text
+my_project/                      <- run `astrovello` from here
+├── Input/
+│   ├── PHANGS-HST/
+│   │   ├── galaxies/<galaxy>/   hlsp_phangs-hst_..._<filter>_v1_exp-drc-sci.fits
+│   │   └── PSF/                 PSFSTD_WFC3UV_<FILTER>.fits
+│   ├── PHANGS-JWST/
+│   │   ├── galaxies/<galaxy>/   hlsp_phangs-jwst_jwst_<instr>_..._v1p1_img.fits
+│   │   └── PSF/                 WebbPSF PSFs (*PSF*.fits)
+│   └── S4G/
+│       ├── galaxies/<galaxy>/   <GALAXY>.phot.1.fits, <GALAXY>.phot.2.fits
+│       └── PSF/                 IRAC PRFs (*_col129_row129.fits)
+└── Output/                      created by the pipeline
+```
+
+The survey directory names must be exactly `PHANGS-HST`, `PHANGS-JWST` and
+`S4G`: the survey of each file is identified from its path. You only need the
+surveys you want to combine.
 
 ```bash
-astrovello --galaxy [GALAXY_NAME] --mode [MODE] [FLAGS]
+cd my_project
+astrovello --galaxy ngc1087 --surveys PHANGS-HST,PHANGS-JWST --create_kernel
 ```
-### Execution Modes
 
-The pipeline can be executed in different stages depending on your needs. Use the `--mode` argument to select one of the following:
+`--surveys` chooses which surveys to combine: a comma-separated list, or `all`
+for every configured survey found in `Input/`. The choice sets the master
+filter and so the whole cube, so a name that is not available stops the run
+instead of being skipped. Without `--surveys` the pipeline asks
+interactively. That needs a terminal, so pass `--surveys` for batch or
+background runs. Use `--root /path/to/my_project` to run it from elsewhere,
+and `--preflight_only` to validate the configuration in seconds without
+processing anything. `astrovello --help` lists every option.
+
+Several galaxies in a row:
+
+```bash
+for g in ngc1087 ngc1433 ngc2903; do
+  astrovello --galaxy $g --surveys PHANGS-HST,PHANGS-JWST --create_kernel || break
+done
+```
+
+Keep `--create_kernel` for every galaxy: `Output/PSF_Kernels/` is shared
+between galaxies, and the convolution grids are derived from each galaxy's
+images.
+
+### Modes
 
 | Mode | Description |
 | :--- | :--- |
-| **`full`** | **Complete Pipeline:** Executes alignment, PSF homogenization, convolution, and hypercube creation in a single run. |
-| **`alignment_only`** | **Spatial Alignment:** Only reprojects S4G images to the PHANGS pixel grid. Use this to check coordinate consistency. |
-| **`conv_only`** | **Resolution Matching:** Performs PSF cleaning, kernel generation via PyPHER, and image convolution. |
-| **`cube_only`** | **Data Integration:** Skips processing and builds the final 3D hypercube using existing convolved files. |
+| `full` (default) | PSF matching and convolution, reprojection, unit conversion and datacube. |
+| `conv_only` | PSF cleaning, kernel generation and convolution only. |
+| `reprojection_only` | Reprojection and unit conversion, from existing convolved files. |
+| `cube_only` | Datacube only, from existing Jy/pixel files. |
 
-> **Note:** When using `conv_only` or `full`, remember to include the `--create_kernel` flag if you need to generate new homogenization kernels for the current galaxy.
+Use `--create_kernel` the first time, and whenever the combination of surveys
+(and therefore the master) changes. It regenerates PSFs and kernels and forces
+reconvolution.
 
-The command must be executed inside the same directory where galaxy data and survey PSFs are located. These inputs need to be organized as follows:
+### Outputs
 
 ```text
-BASE_DIRECTORY/
-├── Input/
-   ├── PHANGS/             # HST images and PSF models
-   |    ├── galaxies/
-   |    |    ├── galaxies/
-   |    |        ├── phangs_hst/
-   |    |            ├── ngc.../
-   |    ├── PSF/
-   └── S4G/                # Spitzer/IRAC images and PSFs
-        ├── galaxies/
-        |    ├── galaxies/
-        |        ├── ngc.../
-        ├── PSF/
+Input/<SURVEY>/PSF_CLEAN/          PSFs resampled onto each convolution grid
+Output/PSF_Kernels/                kernel_<filter>_to_<master>.fits
+Output/convolved_fits/<galaxy>/    convolved bands and the master
+Output/reprojected_files/<galaxy>/ reprojected bands and *_Jy_per_pixel.fits
+Output/datacubes/<galaxy>/         <galaxy>_datacube_sci_<ny>x<nx>_Jy_per_pixel.fits
+Output/checks/<check>/             standalone check outputs
 ```
 
+### Standalone checks
 
-### Usage Examples
+Run from the same project directory, after the pipeline:
 
-Here are the most common ways to run the **AsTrovello** pipeline:
-
-#### 1. Full Processing (Standard)
-Runs everything from alignment to the final hypercube. Ideal for a first-time run on a new galaxy.
 ```bash
-astrovello --galaxy ngc1566 --mode full --create_kernel --apply_mask --sigma 1.5
-```
-
-## Quick Start
-
-```python
-from astrovello import S4G2PHANGS_reproject, create_data_cube, convert2Jansky
-
-# Reproject a Spitzer image onto the PHANGS pixel grid
-S4G2PHANGS_reproject(s4g_file, phangs_ref_file, output_path)
-
-# Convert image units to Jy/pixel
-data, header = convert2Jansky(fits_file)
-
-# Build a 3D hypercube from aligned images
-cube, cube_header = create_data_cube(aligned_images, filter_names, ref_file, header, "output.fits")
+astrovello-check-psf                     # PSF matching, every kernel
+astrovello-check-flux --galaxy ngc1087   # flux conservation through reprojection
 ```
 
 ---
 
-## Project Structure
+## Data sources
 
+- **PHANGS-HST:** https://archive.stsci.edu/hlsp/phangs
+- **PHANGS-JWST:** https://archive.stsci.edu/hlsp/phangs
+- **S4G (Spitzer):** https://irsa.ipac.caltech.edu/data/SPITZER/S4G/
+
+---
+
+## Project structure
+
+```text
+src/astrovello/
+├── astrovello_cli.py              pipeline orchestrator (`astrovello`)
+├── config.py                      per-survey constants
+├── drivers.py                     per-survey behaviour (HDU, masks, units)
+├── convolution.py                 PSF widths, PSF cleaning, kernels, convolution
+├── reprojection.py                reprojection onto the master grid
+├── units.py                       conversion to Jy/pixel
+├── cube.py, mask.py               datacube assembly, masks, sky subtraction
+├── validation.py                  in-pipeline validation gates
+├── preflight.py                   configuration checks before any compute
+├── utils.py                       pixel scales, wavelength ordering
+├── check2_psf_matching.py         `astrovello-check-psf`
+└── check3_flux_conservation.py    `astrovello-check-flux`
+scripts/forensics/                 diagnostic scripts from the pipeline's
+                                   development (not installed)
+notebooks/                         exploratory notebooks (not installed)
 ```
-AsTrovello/
-├── src/
-│   └── astrovello/
-│       ├── __init__.py
-│       ├── alignment.py     # Image reprojection (S4G → PHANGS grid)
-│       ├── convolution.py   # PSF/FWHM estimation and kernel convolution
-│       ├── units.py         # Flux unit conversion to Jy/pixel
-│       ├── masking.py       # Sky background subtraction and signal masking
-│       ├── cube.py          # 3D FITS hypercube creation and cutouts
-│       ├── utils.py         # Utility functions
-│       ├── astrovello_cli.py    # Main execution script
-│       └── batch_runner.py       # Batch processing for multiple galaxies
-├── pyproject.toml
-└── README.md
-```
 
----
-
-## API Reference
-
-### alignment
-`S4G2PHANGS_reproject(s4g_file_path, phangs_ref_file_path, output_path)` — Aligns a Spitzer/IRAC image to the HST pixel grid using WCS reprojection.
-
-### convolution
-`calculaFWHM_radial_profile(files_path)` — Estimates FWHM from PSF files using radial profiles.  
-`final_clean_psf(input_file, output_file)` — Standardizes PSF headers for PyPHER compatibility.  
-`pypher_kernel_creation(todos_fwhm, psf_master_path, input_dir, output_dir)` — Generates PyPHER shell commands to create homogenization kernels.  
-`create_convolvedFITS(original_fits, kernel_fits, output_dir)` — Applies a convolution kernel to an image via FFT.
-
-### units
-`convert2Jansky(fits_file)` — Converts HST (`ELECTRONS/S`) and Spitzer (`MJy/sr`) images to `Jy/pixel`.
-
-### mask
-`mask(data, N_SIGMA=3)` — Sky subtraction and signal mask generation using MAD-based sigma clipping.
-
-### cube
-`create_data_cube(aligned_images, filter_names, ref_file, ref_header, output_filename)` — Builds a 3D FITS hypercube with masking and bounding box cutout.  
-`create_cutouts(cube, cube_header, regions)` — Extracts spatial sub-cubes from the main hypercube.
-
----
-
-## Requirements
-
-All dependencies are installed automatically via pip. Main dependencies:
-
-`numpy` `astropy` `scipy` `matplotlib` `reproject` `photutils` `pypher` `tqdm` `psutil`
-
-Full list available in `pyproject.toml`.
-
----
-
+The methodology, and the reasons behind each choice, are documented in
+`astrovello_pipeline_documentation.md`.

@@ -17,10 +17,10 @@ construidos. Continua SOMENTE LEITURA.
 COMO RODAR
 ----------
     conda activate capivara
-    python diagnostico_etapa1b.py --galaxy ngc2903
+    python scripts/forensics/diagnostico_etapa1b.py --galaxy ngc2903
 
 A coordenada default e a de NGC 2903. Para outra galaxia:
-    python diagnostico_etapa1b.py --galaxy ngc1087 --ra 41.6046 --dec -0.4986
+    python scripts/forensics/diagnostico_etapa1b.py --galaxy ngc1087 --ra 41.6046 --dec -0.4986
 
 Dependencias: numpy + astropy (mesmas de sempre).
 """
@@ -285,7 +285,7 @@ def main():
     args = ap.parse_args()
 
     galaxy = args.galaxy.lower()
-    base_dir = Path.cwd().parents[1]
+    base_dir = Path.cwd()
     input_dir = base_dir / "Input"
     output_dir = base_dir / "Output"
 

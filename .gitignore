@@ -8,6 +8,7 @@
 Input/
 Output/
 src/*.egg-info/
+build/
 dist/
 
 # Ignore temp files

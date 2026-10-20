@@ -3,7 +3,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_area
 from pathlib import Path
-from drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
+from .drivers import BASE_Driver, PHANGS_Driver, S4G_Driver
 
 def convert2Jansky(fits_file: Path, driver) -> tuple:
     """

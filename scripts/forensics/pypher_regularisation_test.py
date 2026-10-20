@@ -27,8 +27,8 @@ Three blocks:
      target. The ratio is one number; the profile shows WHERE they diverge,
      which distinguishes discretisation from smoothing from truncation.
 
-Usage:
-    python test_pypher_regularisation.py
+Usage (from the project directory, the one holding Input/):
+    python scripts/forensics/pypher_regularisation_test.py
 Edit the CONFIG block below to point at your own PSF files.
 """
 
@@ -53,7 +53,9 @@ R_VALUES = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
 # narrow and most sensitive to regularisation, so the effect shows up clearly.
 # f1130w -> f2100w (FWHM 0.357" -> 0.643") is a better probe than
 # f200w -> f2100w (0.062" -> 0.643"), where the kernel is wide and forgiving.
-PSF_DIR = Path("~/Research/AsTrovello/Input/PHANGS-JWST/PSF_CLEAN").expanduser()
+# Paths are relative to the project directory (the one holding Input/);
+# run from there.
+PSF_DIR = Path.cwd() / "Input" / "PHANGS-JWST" / "PSF_CLEAN"
 REAL_SOURCE = PSF_DIR / "PSF_MIRI_in_flight_opd_filter_F1130W.fits"
 REAL_TARGET = PSF_DIR / "master_PSF_MIRI_in_flight_opd_filter_F2100W.fits"
 
@@ -62,9 +64,8 @@ SYN_FWHM_SOURCE = 0.357
 SYN_FWHM_TARGET = 0.643
 SYN_SIZE = 201          # odd, as PyPHER requires
 
-# Outputs go under the repository, not the directory the script is run from.
-REPO_ROOT = Path("~/Research/AsTrovello").expanduser()
-OUT_DIR = REPO_ROOT / "Output" / "checks" / "pypher_regularisation"
+# Outputs go under the project's Output/, next to the pipeline outputs.
+OUT_DIR = Path.cwd() / "Output" / "checks" / "pypher_regularisation"
 
 FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 

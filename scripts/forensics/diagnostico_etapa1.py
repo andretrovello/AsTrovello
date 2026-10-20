@@ -12,11 +12,11 @@ Responde a tres perguntas antes de qualquer correcao:
 
 COMO RODAR
 ----------
-Salve em  /Users/andretrovello/Research/AsTrovello/src/astrovello/
-(o mesmo diretorio de onde voce roda o astrovello_cli_2.0.py) e execute:
+Rode do diretorio do projeto (o que contem Input/, o mesmo de onde voce roda
+o astrovello):
 
     conda activate capivara
-    python diagnostico_etapa1.py --galaxy ngc2903
+    python scripts/forensics/diagnostico_etapa1.py --galaxy ngc2903
 
 Sem dependencias novas: numpy + astropy apenas.
 """
@@ -332,7 +332,7 @@ def main():
 
     galaxy = args.galaxy.lower()
 
-    base_dir = Path.cwd().parents[1]
+    base_dir = Path.cwd()
     input_dir = base_dir / "Input"
     output_dir = base_dir / "Output"
 
@@ -342,7 +342,7 @@ def main():
     print(f"   base: {base_dir}")
     if not input_dir.is_dir():
         print(f"\n   [!] 'Input' nao encontrado. Rode este script do mesmo")
-        print(f"       diretorio de onde voce roda o astrovello_cli_2.0.py.")
+        print(f"       diretorio de onde voce roda o astrovello.")
         return
 
     teste_1_prf(input_dir, args.verbose)

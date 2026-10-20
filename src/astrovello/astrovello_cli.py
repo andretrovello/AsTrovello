@@ -27,22 +27,24 @@ Design notes worth knowing before editing this file
 
 import argparse
 import logging
+import shlex
 import shutil
 import subprocess
+import sys
 import warnings
 from pathlib import Path
 
 import pandas as pd
 from astropy.io import fits
 
-from config import SURVEY_CONFIG, PIVOT_WAVELENGTHS
-from drivers import (
+from .config import SURVEY_CONFIG, PIVOT_WAVELENGTHS
+from .drivers import (
     BASE_Driver, 
     PHANGS_Driver,
     PHANGS_JWST_Driver, 
     S4G_Driver
 )
-from convolution_2_0 import (
+from .convolution import (
     calculateFWHM,
     calculate_half_light_radii,
     choose_bin_factor,
@@ -54,25 +56,25 @@ from convolution_2_0 import (
     pypher_kernel_creation,
     required_blur,
 )
-from reprojection_2_0 import (
+from .reprojection import (
     discover_convolved_files,
     reproject_to_reference,
 )
-from units_2_0 import convert2Jansky
-from validation import (
+from .units import convert2Jansky
+from .validation import (
     check_psf_matching,
     check_flux_conservation,
     ValidationError,
 )
-from cube_2_0 import (
+from .cube import (
     create_data_cube,
     discover_jansky_files,
 )
-from utils_2_0 import (
+from .utils import (
     science_pixel_scale,
     sort_filters_by_wavelength,
 )
-from preflight import preflight
+from .preflight import preflight
 
 
 
@@ -323,8 +325,8 @@ def build_kernels(img_files, psf_files, drivers, survey_list, input_dir,
                 min_kernel_px=min_kernel_px,
             )
             for cmd in commands:
-                print(f"----- Running: {cmd} -----")
-                subprocess.run(cmd, shell=True, check=True)
+                print(f"----- Running: {shlex.join(cmd)} -----")
+                subprocess.run(cmd, check=True)
 
             # PyPHER writes the kernel with its own header and does not carry
             # over non-standard keys from the input PSFs, so PIXSCALE does not
@@ -412,6 +414,65 @@ def print_matching_summary(master, master_survey, r80, conv_pairs, unmatched,
     print("=" * 70 + "\n" + 100 * '#')
 
 
+def resolve_surveys(text, available):
+    """Parse a comma-separated survey list against `available`.
+
+    Returns (selected, missing). `selected` follows the order of `available`
+    and has no duplicates, so the same choice always gives the same run.
+    'all' selects every available survey.
+    """
+    names = {x.strip().upper() for x in text.split(",") if x.strip()}
+    if names == {"ALL"}:
+        return list(available), []
+    missing = sorted(names - set(available))
+    return [s for s in available if s in names], missing
+
+
+def select_surveys(available, requested=None):
+    """The surveys to combine: from --surveys if given, otherwise asked for.
+
+    A requested survey that is not available is a hard error, not dropped:
+    losing a survey changes the master, and with it the whole cube. Returns
+    None on error.
+    """
+    if requested is not None:
+        selected, missing = resolve_surveys(requested, available)
+        if missing or not selected:
+            print(f">>> Error: --surveys asked for {missing or [requested]}, "
+                  f"not available.\n    Available in Input/ and configured: "
+                  f"{available}")
+            return None
+        print(f">>> Surveys: {selected} (from --surveys)")
+        return selected
+
+    # input() without a terminal (nohup, batch, cluster) raises EOFError;
+    # say what to do instead.
+    if not sys.stdin.isatty():
+        print(">>> Error: no terminal to ask which surveys to combine. "
+              "Pass them with --surveys, e.g. "
+              "--surveys PHANGS-HST,PHANGS-JWST")
+        return None
+
+    selected = None
+    while selected is None:
+        choice = input("\t1. Build datacube for all (Y/n)? ").upper().strip()
+        if choice == "Y":
+            selected = list(available)
+        elif choice == "N":
+            while selected is None:
+                candidate, missing = resolve_surveys(
+                    input(f"\tSelect desired surveys {available}: "), available)
+                if candidate and not missing:
+                    selected = candidate
+                else:
+                    print(f">>> Error: choose only from available and "
+                          f"configured surveys: {available}")
+        else:
+            print("\tProvide Y/n answer.")
+    print(f">>> Surveys: {selected} (chosen interactively)")
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser('AsTrovello Pipeline Control')
     parser.add_argument('--mode', type=str,
@@ -419,15 +480,16 @@ def main():
                         default='full', help='Execution mode')
     parser.add_argument('--galaxy', type=str, required=True,
                         help='Galaxy name (e.g., ngc1566)')
+    parser.add_argument('--surveys', type=str, default=None,
+                        help='Comma-separated surveys to combine, e.g. '
+                             'PHANGS-HST,PHANGS-JWST, or "all". Without it '
+                             'the pipeline asks interactively')
     parser.add_argument('--create_kernel', action='store_true',
                         help='Trigger PSF cleaning and PyPHER kernel generation')
     parser.add_argument('--apply_mask', action='store_true',
                         help='Generate a signal-based sky mask for the final cube')
     parser.add_argument('--sigma', type=float, default=2.0,
                         help='Sigma threshold for the sky mask cut')
-    parser.add_argument('--error', action='store_true', help='Create error cube') #not implemented yet
-    parser.add_argument('--valid_pixels_cut', action='store_true',
-                        help='Cut the image to a central radius of valid pixels') 
     parser.add_argument('--force_convolution', action='store_true',
                         help='Force convolution even if convolved files exist')
     parser.add_argument('--bin_factor', type=int, default=None,
@@ -459,6 +521,10 @@ def main():
                              'presence is an error, because it usually means '
                              'the directory holds mixed results.')
     parser.add_argument('--quiet', action='store_true', help='Suppress reprojection logs')
+    parser.add_argument('--root', type=Path, default=Path.cwd(),
+                        help='Project directory: must contain Input/, and '
+                             'Output/ is created inside it (default: the '
+                             'current directory)')
 
     args = parser.parse_args()
     configure_warnings(args.show_warnings)
@@ -468,8 +534,9 @@ def main():
     print(f'Executing AsTrovello for {args.galaxy}...\n')
 
     # ------------------------------ Directories ------------------------------
-    CWD = Path.cwd()
-    BASE_DIR = CWD.parents[1]
+    # The project directory is wherever the command is run (or --root). It
+    # holds the user's Input/; Output/ is built next to it.
+    BASE_DIR = args.root.expanduser().resolve()
     input_dir = BASE_DIR / 'Input'
     output_dir = BASE_DIR / "Output"
 
@@ -479,36 +546,29 @@ def main():
 
     print(f'Root Directory: {BASE_DIR}')
 
-    if not input_dir.exists():
+    if not input_dir.is_dir():
         print(f">>> Error: 'Input' folder not found in {BASE_DIR}")
-        print("Make sure you are in the correct directory.")
-        return
+        print("Run astrovello from the directory that contains Input/, "
+              "or point to it with --root.")
+        return 1
 
     # ------------------------------ Survey selection ------------------------
-    SURVEYS = [x.name for x in input_dir.iterdir() if x.is_dir()]
+    # Survey identity is resolved from the directory name (drivers.get_survey),
+    # so a directory that is not a SURVEY_CONFIG key cannot be processed.
+    found = sorted(x.name for x in input_dir.iterdir() if x.is_dir())
+    SURVEYS = [s for s in found if s in SURVEY_CONFIG]
+    unknown = [s for s in found if s not in SURVEY_CONFIG]
     print(f">>> Found Surveys: {SURVEYS}")
+    if unknown:
+        print(f"==> Warning: ignoring {unknown} in Input/: not a configured "
+              f"survey. Directory names must match {sorted(SURVEY_CONFIG)}.")
+    if not SURVEYS:
+        print(f">>> Error: no configured survey directory in {input_dir}.")
+        return 1
 
-    input_survey_list = None
-    while input_survey_list is None:
-        choice = str(input("\t1. Build datacube for all (Y/n)? ")).upper().strip()
-
-        if choice == "Y":
-            print(">>> Proceeding with all surveys...")
-            input_survey_list = SURVEYS
-
-        elif choice == "N":
-            while input_survey_list is None:
-                selection = str(input("\tSelect desired cubes (PHANGS-HST, PHANGS-JWST, S4G, JPAS,...): "))
-                candidate = [x.strip().upper() for x in selection.split(",")]
-                available = set(SURVEYS).intersection(set(SURVEY_CONFIG.keys()))
-                if set(candidate).issubset(available):
-                    print(f">>> Proceeding with selected surveys: {candidate}")
-                    input_survey_list = candidate
-                else:
-                    print(f">>> Error: choose only from available and configured "
-                          f"surveys: {sorted(available)}")
-        else:
-            print("\tProvide Y/n answer.")
+    input_survey_list = select_surveys(SURVEYS, args.surveys)
+    if input_survey_list is None:
+        return 1
 
     DRIVERS = {
         "BASE": BASE_Driver(config_dict=SURVEY_CONFIG),
@@ -628,8 +688,6 @@ def main():
         if kernel_files and not args.skip_checks:
             for survey in input_survey_list:
                 psf_clean_dir = input_dir / survey / 'PSF_CLEAN'
-                if not psf_clean_dir.is_dir():
-                    continue
                 own_filters = {f.lower()
                                for f in survey_filters.get(survey, [])}
                 survey_kernels = [k for k in kernel_files
@@ -650,13 +708,22 @@ def main():
                             f"Regenerate with --create_kernel.")
                     by_grid.setdefault(round(float(kpx), 4), []).append(k)
 
+                # Without exactly one master PSF on the grid the gate cannot
+                # run, and skipping would convolve with unverified kernels. A
+                # missing PSF_CLEAN lands here too (the glob finds nothing).
+                # Only reachable when kernels are reused: build_kernels writes
+                # one master per grid.
                 for grid, kerns in sorted(by_grid.items()):
                     masters = sorted(psf_clean_dir.glob(f'master_{grid:.4f}_*.fits'))
                     if len(masters) != 1:
-                        print(f"==> CHECK 2 skipped for {survey} @ "
-                              f"{grid:.4f} arcsec/px: expected one master PSF, "
-                              f"found {len(masters)}")
-                        continue
+                        found = ", ".join(m.name for m in masters) or "none"
+                        raise ValidationError(
+                            f"Check 2 cannot run for {survey} on the "
+                            f"{grid:.4f} arcsec/px grid: expected one master "
+                            f"PSF in {psf_clean_dir}, found {len(masters)} "
+                            f"({found}). Its {len(kerns)} kernel(s) would be "
+                            f"applied unverified. Re-run with --create_kernel, "
+                            f"or pass --skip_checks to accept that knowingly.")
                     check_psf_matching(kerns, psf_clean_dir, masters[0])
         elif args.skip_checks:
             print("==> CHECK 2 SKIPPED by --skip_checks")
@@ -790,7 +857,7 @@ def main():
         # conversion on purpose - a leak that reaches the Jy files has already
         # propagated into everything downstream, and the conversion would also
         # rescale the numbers, making the leak harder to attribute.
-        if not args.skip_checks and reprojection_pairs:
+        if not args.skip_checks:
             check_flux_conservation(reprojection_pairs)
         elif args.skip_checks:
             print("==> CHECK 3 SKIPPED by --skip_checks")
@@ -872,4 +939,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

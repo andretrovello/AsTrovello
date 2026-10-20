@@ -19,8 +19,8 @@ what the corrected code now produces - and re-measures both against the same
     if the deviation falls from ~0.84% to ~0.1%, the diagnosis is confirmed
     if it does not move, the cause is elsewhere and the fix is unrelated
 
-Usage:
-    python test_sip_hypothesis.py --galaxy ngc1087
+Usage (from the project directory):
+    python scripts/forensics/test_sip_hypothesis.py --galaxy ngc1087
 """
 
 import argparse
@@ -35,7 +35,8 @@ from astropy.wcs import WCS
 
 warnings.filterwarnings('ignore')
 
-REPO_ROOT = Path("~/Research/AsTrovello").expanduser()
+# Project directory (the one holding Output/): the current directory.
+REPO_ROOT = Path.cwd()
 WORK_DIR = REPO_ROOT / "Output" / "checks" / "sip_hypothesis"
 
 SIP_PREFIXES = ('A_', 'B_', 'AP_', 'BP_')
@@ -145,11 +146,10 @@ def main():
 
     # --- re-measure flux conservation both ways ----------------------------
     try:
-        sys.path.insert(0, str(Path(__file__).parent))
-        from validation import check_flux_conservation
+        from astrovello.validation import check_flux_conservation
     except ImportError:
-        print("\n  validation.py not importable from here; run this script from")
-        print("  the directory that holds it to get the flux comparison.")
+        print("\n  astrovello is not installed in this environment; run")
+        print("  `pip install -e .` from the repo to get the flux comparison.")
         return 0
 
     print(f"\n{'-' * 74}")

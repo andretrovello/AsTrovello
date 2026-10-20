@@ -20,7 +20,7 @@ HST nunca foram levadas a resolucao do IRAC.
 COMO RODAR
 ----------
     conda activate capivara
-    python diagnostico_etapa1c.py
+    python scripts/forensics/diagnostico_etapa1c.py     # do diretorio que contem Input/
 
 Requer que --create_kernel tenha rodado (precisa de Input/<survey>/PSF_CLEAN).
 Dependencias: numpy, astropy, scipy (todas ja usadas pela pipeline).
@@ -290,7 +290,7 @@ def main():
     ap.add_argument("--verbose", action="store_true", help="aceito e ignorado")
     ap.parse_args()
 
-    base_dir = Path.cwd().parents[1]
+    base_dir = Path.cwd()
     input_dir = base_dir / "Input"
     kernel_dir = base_dir / "Output" / "PSF_Kernels"
 

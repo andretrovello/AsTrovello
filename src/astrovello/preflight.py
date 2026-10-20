@@ -21,7 +21,7 @@ compute is spent.
 
 Usage
 -----
-    from preflight import preflight
+    from astrovello.preflight import preflight
 
     ok, plan = preflight(img_files, psf_files, DRIVERS, input_survey_list,
                          r80, fwhm_dict, bin_factors, PIVOT_WAVELENGTHS)
@@ -34,9 +34,9 @@ import warnings
 import numpy as np
 from astropy.io import fits
 
-from convolution_2_0 import report_convolution_grid, required_blur
-from drivers import BASE_Driver
-from utils_2_0 import science_pixel_scale
+from .convolution import report_convolution_grid, required_blur
+from .drivers import BASE_Driver
+from .utils import science_pixel_scale
 
 SEP = "=" * 70
 

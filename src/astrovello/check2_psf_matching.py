@@ -25,9 +25,9 @@ ratio alone would miss:
     D            - Aniano Eq. 20, the integral of the absolute difference;
                    more sensitive to shape than any single radius
 
-Usage:
-    python check2_psf_matching.py
-    python check2_psf_matching.py --regularisation 1e-5
+Usage (from the project directory, the one holding Input/):
+    astrovello-check-psf
+    astrovello-check-psf --regularisation 1e-5
 """
 
 import argparse
@@ -40,8 +40,6 @@ from astropy.io import fits
 from scipy.signal import fftconvolve
 
 # ------------------------------------------------------------------ CONFIG --
-INPUT_ROOT = Path("~/Research/AsTrovello/Input").expanduser()
-
 # Surveys to check. Each must have a PSF_CLEAN/ directory holding PSFs already
 # resampled onto that survey's convolution grid.
 SURVEYS = ["PHANGS-HST", "PHANGS-JWST"]
@@ -54,11 +52,10 @@ NEG_POWER_WARN_PCT = 100.0 * 1.2 / (1.0 + 2.4)
 
 GRID_TOLERANCE = 0.02       # two PSFs must agree in scale to within 2%
 
-# Everything this check produces goes under the repository, not the directory
-# the script happens to be run from, so the outputs stay with the data they
-# describe.
-REPO_ROOT = Path("~/Research/AsTrovello").expanduser()
-WORK_DIR = REPO_ROOT / "Output" / "checks" / "check2_psf_matching"
+# Everything this check produces goes under <root>/Output/checks/, next to the
+# pipeline outputs it describes. <root> is the project directory, the one
+# holding Input/ (default: the current directory, as for the pipeline).
+CHECK_SUBDIR = Path("checks") / "check2_psf_matching"
 
 # Nominal FWHM in arcsec, as measured on the NATIVE (supersampled) PSF files by
 # the pipeline's resolution stage. Reported here only for context, to show how
@@ -197,14 +194,22 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--regularisation', type=float, default=1e-4,
                     help="PyPHER Wiener parameter r (default: 1e-4, PyPHER's own)")
-    ap.add_argument('--input-root', type=Path, default=INPUT_ROOT)
+    ap.add_argument('--root', type=Path, default=Path.cwd(),
+                    help='project directory holding Input/ (default: current directory)')
     args = ap.parse_args()
 
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    root = args.root.expanduser().resolve()
+    input_root = root / "Input"
+    if not input_root.is_dir():
+        print(f"'Input' folder not found in {root}. Run from the project "
+              f"directory or pass --root.")
+        return 2
+    work_dir = root / "Output" / CHECK_SUBDIR
+    work_dir.mkdir(parents=True, exist_ok=True)
     rows = []
 
     for survey in SURVEYS:
-        survey_dir = args.input_root / survey
+        survey_dir = input_root / survey
         master, sources = discover_pairs(survey_dir)
         if master is None:
             print(f"\n[!] no usable PSF_CLEAN in {survey_dir}; skipping.")
@@ -221,7 +226,7 @@ def main():
               f"{'neg pwr':>9} {'D':>10}  verdict")
         print("-" * 78)
 
-        work = WORK_DIR / survey
+        work = work_dir / survey
         work.mkdir(parents=True, exist_ok=True)
 
         for src in sources:
@@ -270,7 +275,7 @@ def main():
 
     # ------------------------------------------------------------ summary ---
     print(f"\n{'=' * 78}\nSUMMARY\n{'=' * 78}")
-    print(f"  kernels written to: {WORK_DIR}")
+    print(f"  kernels written to: {work_dir}")
     if not rows:
         print("No pair could be measured. Check the PSF_CLEAN directories and "
               "that pypher is available.")

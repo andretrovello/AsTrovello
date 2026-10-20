@@ -31,8 +31,8 @@ Apertures are placed on real structure - bright compact sources - rather than
 at random, because empty sky has no flux to conserve and would return a ratio
 dominated by noise.
 
-Usage:
-    python check3_flux_conservation.py --galaxy ngc1087
+Usage (from the project directory, the one holding Input/ and Output/):
+    astrovello-check-flux --galaxy ngc1087
 """
 
 import argparse
@@ -52,12 +52,11 @@ except ImportError:
     sys.exit(2)
 
 # ------------------------------------------------------------------ CONFIG --
-REPO_ROOT = Path("~/Research/AsTrovello").expanduser()
-OUTPUT_ROOT = REPO_ROOT / "Output"
-
-# Where this check writes anything it produces (currently only the report is
-# printed, but keeping the path here means a future plot lands with the data).
-CHECK_DIR = OUTPUT_ROOT / "checks" / "check3_flux_conservation"
+# Where this check writes anything it produces, under <root>/Output (currently
+# only the report is printed, but keeping the path here means a future plot
+# lands with the data). <root> is the project directory, the one holding
+# Input/ (default: the current directory, as for the pipeline).
+CHECK_SUBDIR = Path("checks") / "check3_flux_conservation"
 
 CRITERION_PCT = 1.0          # flux must be conserved to within this
 
@@ -197,20 +196,22 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--galaxy', required=True)
-    ap.add_argument('--output-root', type=Path, default=OUTPUT_ROOT)
+    ap.add_argument('--root', type=Path, default=Path.cwd(),
+                    help='project directory holding Output/ (default: current directory)')
     ap.add_argument('--radius', type=float, default=APERTURE_RADIUS_ARCSEC,
                     help='aperture radius in arcsec')
     ap.add_argument('--n-apertures', type=int, default=N_APERTURES)
     args = ap.parse_args()
 
-    CHECK_DIR.mkdir(parents=True, exist_ok=True)
+    output_root = args.root.expanduser().resolve() / "Output"
     gal = args.galaxy.lower()
-    dir_before = args.output_root / 'convolved_fits' / gal
-    dir_after = args.output_root / 'reprojected_files' / gal
+    dir_before = output_root / 'convolved_fits' / gal
+    dir_after = output_root / 'reprojected_files' / gal
 
     if not dir_before.is_dir() or not dir_after.is_dir():
         print(f"Missing input directories:\n  {dir_before}\n  {dir_after}")
         return 2
+    (output_root / CHECK_SUBDIR).mkdir(parents=True, exist_ok=True)
 
     # pair up the convolved file with its reprojected counterpart by filter
     def filt_of(p):

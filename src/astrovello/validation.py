@@ -95,7 +95,11 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
         list of dicts, one per pair.
 
     Raises:
-        ValidationError if any pair falls outside the criterion.
+        ValidationError if any pair falls outside the criterion, or if any
+        kernel cannot be checked (unparseable name, or not exactly one source
+        PSF on its grid). A kernel the gate cannot check is a failure, not a
+        skip: the gate vouches for every band, so passing on the ones it could
+        reach would let an unverified kernel through under a PASS.
     """
     master = fits.getdata(master_psf_path).astype(np.float64)
     scale_master = fits.getheader(master_psf_path).get('PIXSCALE')
@@ -114,15 +118,17 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
         print(f"      {'band':>8} {'r50 ratio':>11} {'r80 ratio':>11} "
               f"{'neg pwr':>9}  verdict")
 
-    results, failures = [], []
+    results, failures, unchecked = [], [], []
     for kern_path in sorted(kernel_files):
         # kernel_<source>_to_<master>.fits
         parts = kern_path.stem.split('_')
         try:
             filt = parts[parts.index('to') - 1]
         except (ValueError, IndexError):
+            unchecked.append((kern_path.name, "name does not follow "
+                              "kernel_<source>_to_<master>.fits"))
             if verbose:
-                print(f"      {kern_path.name}: unparseable name, skipped")
+                print(f"      {kern_path.name}: unparseable name, NOT CHECKED")
             continue
 
         # PSFs cleaned onto a given grid are prefixed with that grid, so the
@@ -132,14 +138,17 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
         prefix = f"{scale_master:.4f}_"
         matches = [p for p in psf_dir.glob(f'{prefix}*.fits')
                    if filt.upper() in p.stem.upper()]
-        if not matches:      # PSFs written before the per-grid naming
-            matches = [p for p in psf_dir.glob('*.fits')
-                       if filt.upper() in p.stem.upper()
-                       and not p.name.startswith('master_')]
+        # The source PSF is found by name, so this is where a layout the
+        # pipeline was never run on shows up: no PSF named after the filter,
+        # or several (e.g. one per camera), of which build_kernels used one
+        # arbitrarily.
         if len(matches) != 1:
+            found = ", ".join(sorted(p.name for p in matches)) or "none"
+            unchecked.append((filt, f"{len(matches)} candidate source PSFs "
+                                    f"({found})"))
             if verbose:
                 print(f"      {filt:>8}: {len(matches)} candidate source PSFs, "
-                      f"skipped")
+                      f"NOT CHECKED")
             continue
         src_path = matches[0]
 
@@ -191,6 +200,14 @@ def check_psf_matching(kernel_files, psf_dir, master_psf_path, drivers=None,
         results.append({'band': filt, 'ratio_r50': ratio50,
                         'ratio_r80': ratio80, 'neg_pct': neg, 'ok': ok})
 
+    if unchecked and raise_on_fail:
+        lines = "\n".join(f"        {b}: {why}" for b, why in unchecked)
+        raise ValidationError(
+            f"{len(unchecked)} kernel(s) could not be checked:\n{lines}\n"
+            f"    Each kernel needs exactly one source PSF in {psf_dir}, on its "
+            f"grid and named after its filter. Keep one PSF per filter in "
+            f"the survey's PSF/ directory and re-run with --create_kernel.")
+
     if not results:
         raise ValidationError(
             "No kernel could be checked. Either the kernels are missing or "
@@ -227,11 +244,19 @@ def check_flux_conservation(pairs, radius_arcsec=3.0, n_apertures=8,
     change of pixel size: going from 0.1981" to 0.75" the raw sum falls by a
     factor 14 with no photon lost.
 
+    Apertures are chosen among the brightest peaks of the image before
+    reprojection that fall entirely inside BOTH grids. The candidates are
+    over-selected, so peaks outside the master's footprint do not leave a band
+    unmeasured.
+
     Args:
         pairs: list of (band, path_before, path_after)
 
     Raises:
-        ValidationError if any band leaks more than FLUX_TOLERANCE_PCT.
+        ValidationError if any band leaks more than FLUX_TOLERANCE_PCT, or if
+        any band cannot be measured (no source, no aperture inside both grids,
+        no signal), or if there is nothing to measure. As in Check 2, a band
+        the gate cannot measure is a failure, not a skip.
     """
     from scipy.ndimage import uniform_filter, maximum_filter
     from astropy.coordinates import SkyCoord
@@ -239,9 +264,19 @@ def check_flux_conservation(pairs, radius_arcsec=3.0, n_apertures=8,
     try:
         from photutils.aperture import SkyCircularAperture, aperture_photometry
     except ImportError:
+        if raise_on_fail:
+            raise ValidationError(
+                "Check 3 cannot run: photutils is not installed (it is a "
+                "dependency of astrovello; pip install photutils).")
         if verbose:
-            print("\n>>> CHECK 3 skipped: photutils is not installed "
-                  "(conda install -c conda-forge photutils)")
+            print("\n>>> CHECK 3 not run: photutils is not installed")
+        return []
+
+    if not pairs:
+        if raise_on_fail:
+            raise ValidationError(
+                "Check 3 has nothing to measure: no band was reprojected. "
+                "Every band other than the master should be.")
         return []
 
     def bright_sources(data, wcs, n, min_sep, radius):
@@ -290,18 +325,22 @@ def check_flux_conservation(pairs, radius_arcsec=3.0, n_apertures=8,
         print(f"      {'band':>8} {'n ap':>5} {'grid in':>9} {'grid out':>9} "
               f"{'ratio':>9} {'scatter':>9}  verdict")
 
-    results, failures = [], []
+    results, failures, unchecked = [], [], []
     for band, path_before, path_after in pairs:
         with fits.open(path_before) as h:
             data_b, wcs_b = h[0].data.astype(np.float64), WCS(h[0].header, naxis=2)
         with fits.open(path_after) as h:
             data_a, wcs_a = h[0].data.astype(np.float64), WCS(h[0].header, naxis=2)
 
-        coords = bright_sources(data_b, wcs_b, n_apertures,
+        # Over-select, then keep the brightest n that are complete on both
+        # grids: the peaks are found on the grid before reprojection, which
+        # usually covers more sky than the master's.
+        coords = bright_sources(data_b, wcs_b, 5 * n_apertures,
                                 min_separation_arcsec, radius_arcsec)
         if not coords:
+            unchecked.append((band, "no usable source found"))
             if verbose:
-                print(f"      {band:>8}  no usable source found, skipped")
+                print(f"      {band:>8}  no usable source found, NOT CHECKED")
             continue
 
         flux_b, cov_b = aperture_flux(data_b, wcs_b, coords, radius_arcsec)
@@ -311,15 +350,21 @@ def check_flux_conservation(pairs, radius_arcsec=3.0, n_apertures=8,
         # signal. On blank sky the ratio is noise over noise.
         complete = (cov_b > 0.99) & (cov_a > 0.99)
         if not complete.any():
+            unchecked.append((band, "no aperture lies entirely inside both "
+                                    "grids"))
             if verbose:
-                print(f"      {band:>8}  every aperture partly outside a grid, "
-                      f"skipped")
+                print(f"      {band:>8}  no aperture inside both grids, "
+                      f"NOT CHECKED")
             continue
-        peak = np.nanmax(np.abs(flux_b[complete]))
-        ok_ap = complete & (np.abs(flux_b) > 0.05 * peak)
+        keep = np.flatnonzero(complete)[:n_apertures]
+        flux_b, flux_a = flux_b[keep], flux_a[keep]
+        peak = np.nanmax(np.abs(flux_b))
+        ok_ap = np.abs(flux_b) > 0.05 * peak
         if not ok_ap.any():
+            unchecked.append((band, "no aperture with enough signal"))
             if verbose:
-                print(f"      {band:>8}  no aperture with enough signal, skipped")
+                print(f"      {band:>8}  no aperture with enough signal, "
+                      f"NOT CHECKED")
             continue
 
         ratio = flux_a[ok_ap] / flux_b[ok_ap]
@@ -339,9 +384,19 @@ def check_flux_conservation(pairs, radius_arcsec=3.0, n_apertures=8,
         results.append({'band': band, 'ratio': median, 'scatter': scatter,
                         'n_ap': int(ok_ap.sum()), 'ok': ok})
 
+    if unchecked and raise_on_fail:
+        lines = "\n".join(f"        {b}: {why}" for b, why in unchecked)
+        raise ValidationError(
+            f"{len(unchecked)} band(s) could not be checked for flux "
+            f"conservation:\n{lines}\n"
+            f"    A band whose reprojection cannot be verified would enter the "
+            f"cube unverified. Check that the band overlaps the master's "
+            f"footprint and contains signal, or re-run with --skip_checks if "
+            f"you accept the risk knowingly.")
+
     if not results:
         if verbose:
-            print("      -> nothing could be measured; check skipped")
+            print("      -> nothing could be measured")
         return []
 
     if failures and raise_on_fail:

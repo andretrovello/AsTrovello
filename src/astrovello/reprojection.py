@@ -1,5 +1,5 @@
 """
-reprojection_2_0.py - resampling onto a common pixel grid.
+reprojection.py - resampling onto a common pixel grid.
 
 This module REPROJECTS: it reads the WCS of each image and of the reference,
 and interpolates from one grid to the other. It does not verify or correct
@@ -203,7 +203,7 @@ def reproject_to_reference(
     # pixels and are meaningless once the array is on the reference grid. That
     # reasoning was tested and is WRONG for this data.
     #
-    # Measured on the real S4G files (test_sip_hypothesis.py): removing the
+    # Measured on the real S4G files (scripts/forensics/test_sip_hypothesis.py): removing the
     # coefficients displaces pixel-to-sky by a median 6.6 arcsec, up to 49.7 -
     # 8.8 and 66 pixels of the 0.75" grid - and the flux-conservation
     # deviation for irac1 rose from 0.84% to 11.3%. The coefficients are not

@@ -4,7 +4,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_area
 
-from mask_2_0 import (
+from .mask import (
     intersection_footprint_mask, 
     crop_to_mask_bbox,
     sky_level,

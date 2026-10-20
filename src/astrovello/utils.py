@@ -1,4 +1,4 @@
-from config import PIVOT_WAVELENGTHS
+from .config import PIVOT_WAVELENGTHS
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_area
 from astropy.io import fits

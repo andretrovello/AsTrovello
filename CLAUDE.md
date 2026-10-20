@@ -37,6 +37,8 @@ which fixes hold, which gaps remain, and where the report is inconsistent
 second fix session (2.1, 2.2, B3-B6) and resolves the irac1 0.84% (Section 4b).
 `per_band_grid_report.md` is the author's report of the per-band convolution
 grid change (B8), and `fix_verification_2026-09-30.md` verifies it (Section 4c).
+`package_adaptation_report.md` records the packaging change (2026-10-20):
+pip-installable, runs from any project directory, cube bitwise unchanged.
 
 ---
 
@@ -74,26 +76,36 @@ weight made hardening look like new bugs and the work look circular.
 
 ## 1. How to run it
 
-The pipeline is **not** currently installable. It runs only as a script, from
-its own directory:
+The pipeline is an installable package (`pip install -e .` from the repo
+root; since 2026-10-20). Modules use package-relative imports, so they can no
+longer be run as `python <module>.py`. Run it from the **project directory**,
+the one that holds `Input/`; `Output/` is created there:
 
 ```bash
 conda activate capivara
-cd src/astrovello
-python astrovello_cli_2.0.py --galaxy ngc1087 --create_kernel
+cd /Users/andretrovello/Research/AsTrovello      # holds Input/
+astrovello --galaxy ngc1087 --surveys PHANGS-HST,PHANGS-JWST --create_kernel
 ```
 
-Two hard requirements that are easy to trip over:
+- **`--surveys`** (list or `all`) selects the surveys and is logged; without
+  it the CLI asks, which needs a terminal. An unavailable name is fatal, not
+  dropped (it would change the master). Prefer the explicit list for the
+  dissertation cube: `all` changes meaning if a directory is added to `Input/`.
 
-- **CWD must be `src/astrovello`.** `astrovello_cli_2.0.py:339` computes
-  `BASE_DIR = Path.cwd().parents[1]` to find `Input/` and `Output/`, and every
-  module uses flat imports (`from config import ...`, `from drivers import ...`)
-  rather than package-relative ones.
+- **Project directory = CWD, or `--root`.** No path is tied to this machine.
+  The standalone checks are `astrovello-check-psf` and `astrovello-check-flux
+  --galaxy <g>` (same rule, `--root` too). Forensic scripts run as
+  `python scripts/forensics/<script>.py` from the project directory.
 - **`Input/` subdirectory names must match `SURVEY_CONFIG` keys exactly**
   (`PHANGS-HST`, `PHANGS-JWST`, `S4G`). Survey identity is resolved by
   substring-matching the config key against the full file path
-  (`drivers.py:47-51`), so the directory name *is* the survey label. See
-  defect E4.
+  (`drivers.py:47-51`), so the directory name *is* the survey label. Other
+  directories in `Input/` are reported and ignored. See defect E5.
+- PyPHER is called as the `pypher` executable (argument list, no shell), so
+  the environment that has it must be on `PATH`.
+- Verified 2026-10-20: a fresh project directory (path with a space) with only
+  `galaxies/ngc1087` and `PSF/` copied in, HST+JWST, `--create_kernel`, gave a
+  cube bitwise identical to the 30 Sep `1109x1202` cube.
 
 Useful flags: `--preflight_only` (validate config in seconds and exit),
 `--create_kernel` (regenerate PSFs + kernels; also forces reconvolution),
@@ -149,22 +161,30 @@ gate.
 
 ### Module map
 
+Modules lost their `_2_0` suffix on 2026-10-20 (`astrovello_cli_2.0.py` ->
+`astrovello_cli.py`, etc.). Sect. 4 and the dated reports cite the old names.
+
+Files are in `src/astrovello/` (installed) unless marked `[forensics]`: those
+moved to `scripts/forensics/` on 2026-10-20 and are not installed. The
+notebooks are in `notebooks/`.
+
 | File | Role |
 |---|---|
-| `astrovello_cli_2.0.py` | orchestrator; master selection, bin factors, stage dispatch |
+| `astrovello_cli.py` | orchestrator (`astrovello` command); master selection, bin factors, stage dispatch |
 | `config.py` | per-survey constants only — things that cannot be measured |
 | `drivers.py` | per-survey behaviour: HDU, invalid mask, `convolve`, `convert2Jansky` |
-| `convolution_2_0.py` | PSF widths, `clean_psf`, kernel generation, binning, convolution |
-| `reprojection_2_0.py` | file discovery by header, `reproject_to_reference` (was `alignment_2_0.py`; line numbers cited in Sect. 4 C refer to the old file) |
+| `convolution.py` | PSF widths, `clean_psf`, kernel generation, binning, convolution |
+| `reprojection.py` | file discovery by header, `reproject_to_reference` (was `reprojection_2_0.py`, before that `alignment_2_0.py`; line numbers cited in Sect. 4 C refer to the old file) |
 | `validation.py` | in-pipeline gates `check_psf_matching`, `check_flux_conservation`, `ValidationError` |
-| `check2_psf_matching.py`, `check3_flux_conservation.py` | standalone versions of the gates, for reporting; write to `Output/checks/<name>/` |
-| `diagnostico_astrometria.py` | two-line stub (imports only). The HST<->JWST WCS check the report calls `check1_astrometry.py` is **not in the repo** — commit it before citing Check 1 |
-| `pypher_regularisation_test.py` | the 1.06 investigation (report calls it `test_pypher_regularisation.py`) |
-| `units_2_0.py` | thin dispatcher to the driver's `convert2Jansky` |
-| `cube_2_0.py`, `mask_2_0.py` | cube assembly, footprint/signal masks, sky subtraction |
+| `check2_psf_matching.py`, `check3_flux_conservation.py` | standalone versions of the gates (`astrovello-check-psf`, `astrovello-check-flux`), for reporting; write to `<project>/Output/checks/<name>/` |
+| `diagnostico_astrometria.py` [forensics] | two-line stub (imports only). The HST<->JWST WCS check the report calls `check1_astrometry.py` is **not in the repo** — commit it before citing Check 1 |
+| `pypher_regularisation_test.py` [forensics] | the 1.06 investigation (report calls it `test_pypher_regularisation.py`) |
+| `units.py` | thin dispatcher to the driver's `convert2Jansky` |
+| `cube.py`, `mask.py` | cube assembly, footprint/signal masks, sky subtraction |
 | `preflight.py` | validate the whole configuration before any compute |
-| `utils_2_0.py` | WCS pixel scale, wavelength ordering |
-| `diagnostico_etapa1*.py` | read-only forensic scripts from the v1.x debugging |
+| `utils.py` | WCS pixel scale, wavelength ordering |
+| `diagnostico_etapa1*.py` [forensics] | read-only forensic scripts from the v1.x debugging (still expect the v1.x `Input/PHANGS` layout) |
+| `test_sip_hypothesis.py` [forensics] | the SIP test discussed in Sect. 4b; needs the package installed |
 
 ---
 
@@ -691,7 +711,7 @@ the places where it describes something the code does not do:
 | Sects. 5, 7: `NATPXAR` "closes the unit bug"; conversion reads the native area from the header | Written, never read. Config constant used instead (A2) |
 | Sect. 10: "a band cannot be both matched and unmatched (**raises**)" | No such check exists. `print_matching_summary:288` prints a warning |
 | Sect. 10: "missing kernels for the current master **raise** with a clear message" | `rediscover_unmatched` silently reclassifies them as unmatched |
-| Sect. 9: preflight checks "master-grid consistency" | `_check_master_grid` takes `errors` and never appends to it — it only prints a reminder, and only when bin > 1 |
+| Sect. 9: preflight checks "master-grid consistency" **[doc corrected 2026-10-20]** | `_check_master_grid` takes `errors` and never appends to it — it only prints a reminder, and only when bin > 1 |
 | Sect. 3: `get_fwhm` carries a warning not to use it for ranking | True — but `derive_bin_factors:128` then passes that same Gaussian FWHM as the master width for the grid decision |
 | Sect. 5: binning by mean has "no aliasing and no loss of information" | Overstated. A box filter + decimation is far better than interpolation, but its sinc transfer function does not cut off cleanly at Nyquist — it aliases, weakly. **Soften before a referee sees it** |
 | Sect. 8: "crops again by the mask **with padding**" | `padding=50` is defeated: the mask is applied at `cube_2_0.py:205` *before* the crop, and `crop_to_mask_bbox:28` re-applies it, so the padded ring is guaranteed all-NaN |
@@ -722,6 +742,12 @@ built and `mask_final = np.isfinite(cropped_images[0])` — band 0 alone defines
 the cube footprint. The doc describes the masked path as the normal one.
 
 ### E. Repository state
+
+> 2026-10-20: E1, E2, E3 and E7 **fixed** on `v2-dev/package_adaptation`
+> (package-relative imports, minimal `__init__`, `__main__`, entry points
+> `astrovello`, `astrovello-check-psf`, `astrovello-check-flux`; unused
+> dependencies dropped; README rewritten for v2). E4 is moot (the repo's
+> `Input/` now matches). E5, E6, E8 open.
 
 - **E1. `src/astrovello/__init__.py` is dead.** `import astrovello` raises
   `ModuleNotFoundError: No module named 'astrovello.alignment'`. It imports
@@ -757,7 +783,10 @@ the cube footprint. The doc describes the masked path as the normal one.
   pytest cases on synthetic FITS would pay for itself.
 - **E7. README describes v1.x**: "Reprojects S4G images onto the HST pixel
   grid" — the opposite of the current design. No JWST.
-- **E8.** `--error` and `--valid_pixels_cut` are declared but unimplemented.
+- **E8.** `--error` and `--valid_pixels_cut` were declared but unimplemented.
+  **Removed from the CLI 2026-10-20** (a pip user passing `--error` would
+  have believed an error cube was produced); passing them is now an argparse
+  error. Re-add each flag together with its implementation.
   `config.py:30` has a typo: `Notesf`.
 
 ---
@@ -871,12 +900,42 @@ Leftovers, none affecting the current cube:
   native scale in the survey, otherwise a fine first band undersamples MIRI.
 - [hardening] `rediscover_unmatched` and `preflight._check_grids` still assume
   one grid per survey; the preflight table prints every JWST pair on 0.1109".
-- [hardening] Check 2 prints "skipped" when a grid's master is missing
-  (should raise, Invariant 8). The pre-per-grid-naming fallback in
-  `validation.check_psf_matching` is unreachable; remove it.
+- [hardening — FIXED 2026-10-20] Check 2 printed "skipped" when a grid's
+  master was missing or duplicated, and skipped a survey silently when its
+  `PSF_CLEAN` was absent. The CLI now raises in both cases (reachable only
+  when kernels are reused). See `package_adaptation_report.md` Sect. 9.
+  The pre-per-grid-naming fallback in `validation.check_psf_matching` was
+  removed the same day (Sect. 10 of that report).
+- [hardening — FIXED 2026-10-20] the per-kernel skip inside
+  `check_psf_matching`: a kernel with an unparseable name, or with zero or
+  several candidate source PSFs (e.g. one F814W PSF per camera), was skipped
+  and the gate still passed. It now raises with the kernel and the candidates.
+  Verified end to end (duplicate F814W PSF -> exit 1 before any convolution).
+  See `package_adaptation_report.md` Sect. 8.
+- [hardening — FIXED 2026-10-20] **Check 3 had the same skip pattern**: a
+  band with no source, no aperture inside both grids or no signal was
+  "skipped"; the gate passed if none could be measured, and when
+  `reprojection_pairs` was empty or `photutils` missing. All now raise. The
+  apertures are also chosen among 5x over-selected peaks, keeping the 8
+  brightest inside both grids, so peaks outside the master's footprint no
+  longer cost apertures. Without that, the new rule would fire falsely. In
+  NGC 1087 this changed the three MIRI bands from 7 to 8 apertures; the cube
+  is bitwise unchanged. See `package_adaptation_report.md` Sect. 12.
 - [hardening] `build_kernels` filters PSFs by `get_psf_filter_name` against a
   set built from `get_sci_filter_name`. A naming mismatch would drop a band
   silently.
+- [cosmetic — OPEN, found 2026-10-20] `build_kernels` keys grids with
+  `round(native * bin, 6)` (`astrovello_cli.py:269`) but names files with
+  `{grid:.4f}` (`:282`, `:303`). The three NIRCam LW bands of NGC 1087 have
+  native scales 0.0629939 / 0.0629954 / 0.0629981"/px (F300M / F335M / F360M):
+  three keys, one name. The log says "5 distinct grids" for 3. The master PSF
+  is cleaned three times into the same `master_0.0630_*` file, each
+  overwriting the last. No numerical effect: each group's kernels are built
+  before the next overwrite, and Check 2 (grouped by `PIXSCALE` rounded to 4
+  decimals) compares F300M/F335M with the F360M-grid master, 0.007% apart,
+  well inside its 2% grid tolerance. Pre-existing since B8. Fix: round the key
+  to the precision used in the file name (or a relative tolerance), so the
+  three bands form one group.
 - [cosmetic/dissertation] standalone `check2_psf_matching.py` expects one
   `master_*.fits` and now skips JWST; `pypher_regularisation_test.py:58`
   hardcodes the old master name.
@@ -900,10 +959,10 @@ depends on it — is adopted. Updated 2026-09-30. **With B8 done, only row 3 can
 | ~~B8~~ | ~~per-band convolution grid + PIXSCALE stamp~~ | done | **Done 2026-09-30**, blocker for HST+JWST. Remove the pre-B8 1135x1277 cube; update the methodology doc in the same commit |
 | 3 | **C4** — strip S4G SIP at ingestion | **Blocker for S4G cubes only**; none for HST+JWST | Explains the irac1 0.84%, and removes a radial misregistration of every band in irac2-master cubes. Gaia check first if it goes in the dissertation |
 | 4 | **A2 fallback -> raise**; **B2 `abs(sum - 1)` gate** | Hardening — no current cube affected | Small; both close the last "fallback hides the defect" paths |
-| 4b | B8 leftovers: `imgs[0]` in `derive_bin_factors` (-> max native), per-band grid in `rediscover_unmatched`/preflight, Check 2 skip -> raise | Hardening — no current cube affected | Sect. 4c |
+| 4b | B8 leftovers: `imgs[0]` in `derive_bin_factors` (-> max native), per-band grid in `rediscover_unmatched`/preflight (Check 2 skip -> raise done 2026-10-20) | Hardening — no current cube affected | Sect. 4c |
 | 5 | C1, C2 — SIP keys | Hardening (latent) | Largely moot for S4G after C4; keep C1's pop as a defence |
 | 6 | Documentation reconciliation | Needed for the dissertation text, not the cube | Session report 3.6 and the SIP note at `reprojection_2_0.py:199-214` (C4); the "raises" claims, the "no aliasing" claim (docstring already softened; check the methodology doc), the r50 tolerance and grid systematic, the `reproject_interp` order (C3); plus the session-report corrections in Sect. 4a (Check 3 table, B1 mechanism, 1.06, file names) |
-| 7 | Packaging (E1-E5) | Backlog | When handing the code to someone else |
+| ~~7~~ | ~~Packaging (E1-E3, E7)~~ | done | **Done 2026-10-20.** E5 (survey from header), E6 (tests), E8 remain |
 
 Two items are **decisions, not fixes**, and are the author's to make: whether
 the 15.5"-per-side border loss from the dilation is acceptable for these

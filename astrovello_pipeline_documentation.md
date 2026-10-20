@@ -24,11 +24,11 @@ dissertation chapter on data reduction.
 3. [PSF measurement and master selection](#3-psf-measurement-and-master-selection)
 4. [PSF matching and kernel generation](#4-psf-matching-and-kernel-generation)
 5. [Convolution](#5-convolution)
-6. [Reprojection (`reprojection_2_0.py`)](#6-reprojection-reprojection_2_0py)
-7. [Unit conversion (`units_2_0.py`)](#7-unit-conversion-units_2_0py)
-8. [Datacube assembly (`cube_2_0.py`, `mask_2_0.py`)](#8-datacube-assembly-cube_2_0py-mask_2_0py)
-9. [Preflight validation (`preflight.py`)](#9-preflight-validation-preflightpy)
-10. [The CLI orchestrator (`astrovello_cli_2.0.py`)](#10-the-cli-orchestrator-astrovello_cli_20py)
+6. [Reprojection (`reprojection.py`)](#6-reprojection-reprojectionpy)
+7. [Unit conversion (`units.py`)](#7-unit-conversion-unitspy)
+8. [Datacube assembly (`cube.py`, `mask.py`)](#8-datacube-assembly-cubepy-maskpy)
+9. [Validation: preflight and in-pipeline gates (`preflight.py`, `validation.py`)](#9-validation-preflight-and-in-pipeline-gates-preflightpy-validationpy)
+10. [The CLI orchestrator (`astrovello_cli.py`)](#10-the-cli-orchestrator-astrovello_clipy)
 11. [Configuration (`config.py`)](#11-configuration-configpy)
 12. [Annotated bibliography](#12-annotated-bibliography)
 
@@ -67,7 +67,7 @@ Three operations are routinely conflated, and this document keeps them apart:
 | **PSF matching** (homogenisation) | bring images to the same angular resolution. This is what PyPHER and the convolution stage do. |
 
 "Alignment" on its own is avoided, because it reads as registration. The module
-that performs the resampling is therefore `reprojection_2_0.py`.
+that performs the resampling is therefore `reprojection.py`.
 
 The pipeline runs in four stages, in this order:
 
@@ -231,7 +231,9 @@ incorrect convolution without raising any error. Several diagnostics can
 detect this. The tests implemented in AsTrovello were adapted from the
 performance metrics of Aniano et al. (2011, PASP 123, 1218, Sect. 5) and are
 described below. They are reported by `inspect_kernel` at convolution time and
-by `diagnostico_etapa1c.py` as a standalone check.
+by `diagnostico_etapa1c.py` (now in `scripts/forensics/`) as a standalone check.
+Test 1, together with the negative power of test 2, is enforced inside the
+pipeline by **Check 2**, which aborts the run on failure (Section 9).
 
 #### 1. The kernel must reproduce the target PSF
 
@@ -682,7 +684,7 @@ ringing by locating the negatives and comparing the worst one to the noise.
 
 ---
 
-## 6. Reprojection (`reprojection_2_0.py`)
+## 6. Reprojection (`reprojection.py`)
 
 This stage brings every band onto the master's pixel grid. It **reprojects**:
 it reads the WCS of the source and of the reference and interpolates between
@@ -818,7 +820,7 @@ misaligned with the image. This is a latent requirement, not a current bug.
 
 ---
 
-## 7. Unit conversion (`units_2_0.py`)
+## 7. Unit conversion (`units.py`)
 
 ### `convert2Jansky(fits_file, driver)`
 
@@ -844,7 +846,7 @@ form the surface-brightness surveys (S4G, JWST) use naturally.
 
 ---
 
-## 8. Datacube assembly (`cube_2_0.py`, `mask_2_0.py`)
+## 8. Datacube assembly (`cube.py`, `mask.py`)
 
 ### `discover_jansky_files(...)`
 
@@ -861,7 +863,7 @@ any processing, performs sky subtraction band by band, builds a signal mask,
 crops again by the mask with padding, and writes the 3D cube with a WCS and
 `FILTnnn`/`PIXAREA` provenance in the header.
 
-### `mask_2_0.py`
+### `mask.py`
 
 - `intersection_footprint_mask` — pixels valid in every band.
 - `crop_to_mask_bbox` — bounding-box crop with padding.
@@ -880,7 +882,16 @@ would indicate over-subtraction.
 
 ---
 
-## 9. Preflight validation (`preflight.py`)
+## 9. Validation: preflight and in-pipeline gates (`preflight.py`, `validation.py`)
+
+The pipeline validates at three moments: before any computation (preflight),
+after the kernels exist and before any image is convolved (**Check 2**), and
+after reprojection and before unit conversion (**Check 3**). The numbering
+follows the original validation plan, in which Check 1 was a one-off HST↔JWST
+astrometric comparison. Check 1 is not part of the pipeline, which reprojects
+but does not register (Section 1).
+
+### Preflight (`preflight.py`)
 
 Validates the entire configuration *before* any processing, failing loudly on
 anything that would produce an incomplete or incoherent cube, and warning on
@@ -888,19 +899,213 @@ legitimate scientific choices. Its existence embodies the second design
 principle: check the assumption at the point of use.
 
 Checks: band coverage (every science band has a PSF, a pivot wavelength and an
-r80); driver completeness (no unimplemented abstract methods); convolution grid
-per survey (master sampling and pair resolvability, via
-`report_convolution_grid`); master-grid consistency (the master must end up on
-its own survey's grid); and an estimate of the final cube size.
+r80); driver completeness (no unimplemented abstract methods); the convolution
+grid per survey (master sampling and pair resolvability, via
+`report_convolution_grid`); and an estimate of the final cube size. When the
+master's survey is binned, it also prints a reminder that the master must be
+binned like its own survey's bands. That reminder is informational: it never
+fails the run.
 
 `--preflight_only` runs it and exits, so a new configuration can be validated
 in seconds. It correctly distinguishes a hard error (a grid that undersamples
 the master yet still tries to match pairs) from a benign warning (no pair
 resolvable, so bands enter unmatched — the PHANGS-only case).
 
+### The gates (`validation.py`): design
+
+Checks 2 and 3 are **gates**: on failure they raise `ValidationError` and the
+run stops, at the stage that produced the problem. Three design rules:
+
+- **Fixed criteria.** The thresholds are module constants (`PSF_RATIO_LO`,
+  `PSF_RATIO_HI`, `FLUX_TOLERANCE_PCT`), not arguments: a threshold that can be
+  relaxed at the call site is not a gate. The only override is to skip the
+  checks outright with `--skip_checks`, which is written to the log.
+- **Measure before transforming.** Every quantity that a transformation could
+  hide is measured first. Example: the kernel's sum and negative power are
+  read from the raw PyPHER output, before normalisation. Dividing a
+  100%-negative kernel by its negative sum makes it read as 100% positive.
+- **A check that cannot be performed is a failure, not a skip.** A band the
+  gate cannot verify would otherwise enter the cube under a PASS. This holds
+  for both gates since 2026-10-20.
+
+### Check 2 — PSF matching (`check_psf_matching`)
+
+**When.** After the kernels are built (`--create_kernel`) or found on disk
+(reused), before any science image is convolved. Kernels are grouped by survey
+and by convolution grid, read from each kernel's `PIXSCALE`. Each grid is
+compared with its own cleaned master PSF, `PSF_CLEAN/master_<grid>_*.fits`.
+
+**What.** For each kernel $K\{A \Rightarrow B\}$, the source PSF $\Psi_A$ is
+convolved with the normalised kernel and compared with the master $\Psi_B$.
+This is test 1 of Section 4 (Aniano et al. 2011, Sect. 5):
+
+$$0.95 \le \frac{R50(\Psi_A \star K)}{R50(\Psi_B)} \le 1.05$$
+
+$R50$ is the radius enclosing 50% of the flux, measured from the cumulative
+curve around the peak, so it does not depend on the profile shape. The $R80$
+ratio is also reported, to show the wings, but it does not decide the
+verdict. Both radii are measured on the same grid, the convolution grid of
+that kernel.
+
+**Hard failures**, checked before or instead of the ratio:
+
+| Condition | Why |
+|---|---|
+| source PSF and master on grids that differ by more than 2% | a kernel between different grids is invalid; the v1.x defect (~12× too little blur) |
+| raw kernel sum $< 0$ or $= 0$ | the sign-flip signature of the v1.x grid mismatch; normalising would hide it |
+| a kernel without `PIXSCALE` | the grid cannot be verified |
+| a kernel whose name cannot be parsed, or with zero or several candidate source PSFs on its grid | the kernel would be applied unverified |
+| a grid without exactly one master PSF in `PSF_CLEAN` (a missing `PSF_CLEAN` included) | all kernels of that grid would be applied unverified |
+
+The last two rows exist because the source PSF of each kernel is found **by
+file name**: the file `PSF_CLEAN/<grid>_*` whose name contains the filter.
+Until 2026-10-20 a kernel or grid that could not be matched was skipped, and
+the gate passed on the remaining ones. One realistic trigger is two PSFs for
+one filter, for example WFC3/UVIS and ACS/WFC for F814W. In that case
+`build_kernels` keeps one of them arbitrarily, and the band went through
+unverified under a PASS. Both cases now stop the run, naming the files
+involved.
+
+**Negative power.** Measured on the raw kernel and reported on the normalised
+scale of Section 4, $W_-/(1 + 2W_-)$. A kernel above the value that
+corresponds to Aniano et al.'s usage limit $W_- \approx 1.2$ (35.3%) is
+flagged `PASS (neg pwr high)`. The flag is a warning: it does not fail the
+gate.
+
+**Measured** (NGC 1087, PHANGS-HST + PHANGS-JWST, master F2100W, clean run of
+2026-10-20; negative power on the raw kernels):
+
+| Band | Grid ("/px) | $R50$ ratio | $R80$ ratio | Negative power |
+|---|---|---|---|---|
+| F275W, F336W, F438W, F555W | 0.1981 | 1.0001 | 1.0000 | 0.00% |
+| F814W | 0.1981 | 1.0000 | 1.0000 | 0.00% |
+| F200W | 0.0307 | 1.0000 | 0.9986 | 2.02% |
+| F300M, F335M, F360M | 0.0630 | 0.9999–1.0000 | 0.9999–1.0000 | 2.97–3.73% |
+| F770W, F1000W, F1130W | 0.1109 | 1.0000 | 1.0000 | 9.71–16.67% |
+
+All 12 pass. The negative power grows as the source PSF approaches the master
+in width (MIRI), as Section 4 anticipates, and stays well below the 35.3%
+flag.
+
+**Limitation — state it when citing Check 2.** The gate convolves the *same*
+cleaned PSFs from which PyPHER built the kernel. A ratio near 1.0 is therefore
+close to guaranteed by construction. Check 2 catches stale kernels, grid
+mismatches, sign-flipped or zero-sum kernels, kernels built for another
+target, and ambiguous inputs. It is **not** independent evidence of the
+resolution reached on the science images.
+
+**Relation to the ~1.06 of Section 4.** `diagnostico_etapa1c.py` measured the
+numerator on the convolution grid and the denominator on the raw PRF grid, so
+the two radii were quantised differently. Check 2 measures both on one grid
+and obtains 0.9999–1.0001. Two caveats apply. That one-grid measurement is
+the likely reason for the difference, but it was not isolated in a dedicated
+test. And the two numbers come from different configurations (HST → IRAC
+then, HST/JWST → F2100W now).
+
+### Check 3 — flux conservation through reprojection (`check_flux_conservation`)
+
+**When.** After reprojection and before unit conversion. A leak that reached
+the Jy/pixel files would already have propagated downstream, and the
+conversion would rescale the numbers and make it harder to attribute.
+
+**Which bands.** Every band that was resampled. The master is copied onto its
+own grid, not resampled, so it is not tested.
+
+**What.** The same patch of sky is measured on the grid before and after
+reprojection:
+
+1. Candidate centres are the brightest peaks of the image before
+   reprojection, taken from a copy smoothed with a 5-pixel box filter, so
+   single hot pixels are not chosen. Peaks are at least 10″ apart, and at least
+   1.5 aperture radii from the edge.
+2. Circular apertures of radius 3″, **fixed in sky coordinates**, are placed on
+   both images. The 8 brightest candidates whose aperture lies entirely inside
+   **both** grids are kept: coverage above 99% on each. Five times as many
+   candidates are considered, because the image before reprojection usually
+   covers more sky than the master's grid. Without this, peaks outside the
+   master's footprint would leave a band with fewer apertures, or with none.
+   When the 8 brightest peaks are all inside both grids, the selection is the
+   same as taking the top 8.
+3. **Each aperture sum is multiplied by the pixel area of its own grid**,
+   $|\det(\text{pixel scale matrix})|$. This is the crux of the check:
+   `reproject_interp` preserves the *value* of each pixel (surface brightness),
+   not the sum. Raw sums on two grids would therefore differ by the ratio of
+   pixel areas with no flux lost: a factor $(0.75/0.1981)^2 \approx 14$
+   between the old HST and S4G grids. The area weighting leaves the quantity
+   that must actually be conserved.
+4. Of those, an aperture counts only if its flux exceeds 5% of the brightest
+   one. On blank sky the ratio would be noise over noise.
+5. The statistic is the median of the after/before ratios, and the criterion
+   is $|\text{median} - 1| \le 1\%$.
+
+The band's calibration constant cancels, since each band is compared with
+itself.
+
+**Measured** (same run as Check 2):
+
+| Bands | Grid in → out ("/px) | Apertures | Median ratio | Scatter |
+|---|---|---|---|---|
+| F275W, F336W, F438W, F555W, F814W | 0.1981 → 0.1109 | 8 | 0.9999 | 0.01–0.05% |
+| F200W | 0.0307 → 0.1109 | 8 | 1.0000 | 0.00% |
+| F300M, F335M, F360M | 0.0630 → 0.1109 | 7–8 | 1.0000 | 0.00% |
+| F770W, F1000W, F1130W | 0.1109 → 0.1109 | 8 | 0.9999 | 0.00–0.01% |
+
+Worst deviation 0.01%. Before the selection described in step 2, the three
+MIRI bands had 7 apertures and a ratio of 1.0000. In each, one of the 8
+brightest peaks fell partly outside the master's grid and was dropped. F300M
+keeps 7: its eighth aperture fails the signal cut, not the coverage.
+
+**Hard failures.**
+
+| Condition | Why |
+|---|---|
+| a band deviates by more than 1% | the reprojection leaks or gains flux |
+| a band with no usable source, no aperture inside both grids, or no aperture with signal | the band would enter the cube with its reprojection unverified |
+| no band to measure (no band was reprojected) | every band but the master is reprojected, so this means something upstream went wrong |
+| `photutils` cannot be imported | the measurement cannot be made (it is a declared dependency) |
+
+Until 2026-10-20 the second to fourth rows were skips: the band, or the whole
+gate, was reported as skipped and the run went on.
+
+**Limitation: passing the threshold does not rule out a smaller
+systematic.** In the HST+JWST+S4G configuration (master IRAC2), IRAC1 passed
+at 0.84%. The deviation was later traced to the S4G SIP coefficients, which
+disappear when SIP is switched off (`fix_verification_2026-09-29.md`,
+Sect. 4). A 1% gate catches a leaking resampling; it is not a measurement of
+astrometric consistency.
+
+### Standalone versions
+
+`astrovello-check-psf` (`check2_psf_matching.py`) and `astrovello-check-flux`
+(`check3_flux_conservation.py`) repeat the measurements outside the pipeline,
+for reports. They write to `Output/checks/<name>/` and never stop anything.
+Two differences matter when citing them:
+
+- the standalone Check 2 expects a single `master_*.fits` per survey, and so
+  currently skips PHANGS-JWST, which has one master per grid;
+- the standalone Check 3 does not filter by master. In an `Output/` that holds
+  more than one configuration it mixes them.
+
+For numbers to be cited, use the in-pipeline gates or a clean `Output/`.
+
 ---
 
-## 10. The CLI orchestrator (`astrovello_cli_2.0.py`)
+## 10. The CLI orchestrator (`astrovello_cli.py`)
+
+Installed with pip, it is the `astrovello` command (also `python -m
+astrovello`). It runs on a **project directory**: the directory the command is
+run from, or the one given with `--root`. That directory must hold `Input/`,
+with one subdirectory per survey named exactly as the `SURVEY_CONFIG` key
+(`PHANGS-HST`, `PHANGS-JWST`, `S4G`), because survey identity is resolved from
+the path. Directories that are not configured surveys are reported and ignored.
+The surveys to combine are given with `--surveys` (a list, or `all`) or, when
+it is absent, chosen interactively. The selection is printed in the log either
+way. A requested survey that is not available stops the run: dropping it would
+silently change the master, and with it the whole cube.
+`Output/` is created inside the same project directory. No path is tied to the
+author's machine; the standalone checks (`astrovello-check-psf`,
+`astrovello-check-flux`) follow the same rule and write to
+`Output/checks/<name>/`.
 
 `main()` runs the four stages. The supporting functions:
 
@@ -934,7 +1139,7 @@ index, and `PIVOT_WAVELENGTHS` per filter (used to order the cube by wavelength
 and by the downstream RGB/plotting).
 
 Pixel scales for the *science images* are **not** taken from here — they are
-read from each file's WCS (`science_pixel_scale` in `utils_2_0.py`), because
+read from each file's WCS (`science_pixel_scale` in `utils.py`), because
 the config constant is the PSF reference scale, which for S4G (1.221″) is not
 the mosaic scale (0.75″). Conflating the two was the original unit bug.
 

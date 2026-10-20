@@ -497,7 +497,8 @@ def pypher_kernel_creation(cleaned_psf_by_filter: dict, psf_master_name: str,
     must be written out with `copy_as_convolved`.
 
     Returns:
-        (pypher_commands, skipped), where `skipped` is a list of
+        (pypher_commands, skipped), where each command is an argument list
+        for `subprocess.run` and `skipped` is a list of
         (filter, residual_mismatch_arcsec).
     """
     if psf_master_name not in cleaned_psf_by_filter:
@@ -554,7 +555,10 @@ def pypher_kernel_creation(cleaned_psf_by_filter: dict, psf_master_name: str,
         if filt == psf_master_name:
             continue
         kernel_name = output_dir / f"kernel_{filt}_to_{psf_master_name}.fits"
-        pypher_commands.append(f"pypher {psf_path} {psf_master_path} {kernel_name}")
+        # Argument list, not a shell string: the project directory is the
+        # user's, and a path with a space would split under a shell.
+        pypher_commands.append(["pypher", str(psf_path),
+                                str(psf_master_path), str(kernel_name)])
 
     print(f">>> {len(pypher_commands)} kernels on grid "
           f"{grid_scale_arcsec:.4f} arcsec/px ({master_shape[0]}px arrays)")
