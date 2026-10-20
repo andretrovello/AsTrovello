@@ -96,6 +96,19 @@ commit e o push no branch v2.
 
 ## Parte 2: levar a v2 para a `main`
 
+> **Feito em 2026-10-20.**
+> - A tag `v1.0` está em `6a600b0`, publicada.
+> - O merge foi preparado na `main` local, no commit `d95d4b7 AsTrovello 2.0`.
+> - **O push direto para a `main` foi recusado**:
+>   `GH006: Protected branch update failed ... Changes must be made through a
+>   pull request`. O commit foi então enviado como `release/v2.0.0`, e o
+>   PR #1 foi integrado com "Merge pull request" (merge commit). A `main` está
+>   em `45e9cb9`.
+> - Conferido: a página inicial do GitHub mostra só `.gitignore`,
+>   `AsTrovello_logo.png`, `LICENSE`, `README.md`, `pyproject.toml` e `src`.
+>   `git merge-base main v2-dev/package_adaptation` = `424adba` (a ponta do
+>   branch v2), então os próximos releases são merges normais (2.4).
+
 ### 2.0 Decisões (tomadas em 2026-10-20)
 
 | Decisão | Escolha |
@@ -204,12 +217,37 @@ git diff --cached --stat <V2> -- src pyproject.toml README.md
 # cujo nome não existe na v2: remova-o com git rm -f.
 ```
 
-Commit e push:
+Commit:
 
 ```bash
 git commit -m "AsTrovello 2.0"
-git push origin main
 ```
+
+**A `main` do GitHub é protegida e só aceita pull request.** Um
+`git push origin main` é recusado com `GH006`. Leve o commit por PR:
+
+```bash
+git push origin main:release/v2.0.0     # o conteúdo da main local vai para um branch novo no GitHub
+```
+
+1. No GitHub: **Compare & pull request**, com base `main` ← compare
+   `release/v2.0.0`. Depois, **Create pull request**.
+2. No fim da aba *Conversation* do PR, use o botão verde **Merge pull
+   request** (é o "Create a merge commit") e **Confirm merge**. **Não use**
+   "Squash and merge" nem "Rebase and merge". Só o merge commit mantém a v2
+   na história da `main`, e é isso que faz os próximos releases serem merges
+   normais. Se o botão mostrar outro método, a seta ▾ ao lado troca.
+3. **Delete branch** apaga só o `release/v2.0.0` no GitHub. Os commits já
+   estão na `main`, e o PR permite "Restore branch".
+4. No terminal:
+
+   ```bash
+   git checkout main
+   git pull origin main              # fast-forward para o merge do PR
+   git status -sb                    # "## main...origin/main", sem ahead/behind
+   git fetch --prune                 # limpa a referência ao branch apagado
+   git checkout v2-dev/package_adaptation
+   ```
 
 Abra o repositório no GitHub e confira se a página inicial mostra só o
 README, a licença, o `pyproject.toml` e o `src/`.
@@ -217,10 +255,13 @@ README, a licença, o `pyproject.toml` e o `src/`.
 ### 2.4 Próximos releases (v2 → `main`)
 
 Depois do 2.3, os dois lados passam a ter um ancestral comum, e o merge vira
-o normal:
+o normal. Como a `main` é protegida, prepare o release num branch criado a
+partir dela e leve-o por PR, como no 2.3:
 
 ```bash
 git checkout main
+git pull origin main
+git checkout -b release/vX.Y.Z
 git merge --no-commit <V2>
 ```
 
@@ -233,6 +274,10 @@ git merge --no-commit <V2>
   git rm -rf --ignore-unmatch <arquivo>     # ex.: CLAUDE.md, ou CLAUDE.md dev_notes
   git commit
   ```
+
+- Confira (`git ls-files | cut -d/ -f1 | sort -u`), depois
+  `git push origin release/vX.Y.Z`, PR para a `main` com **Merge pull
+  request**, e os passos 3 e 4 do 2.3.
 
 Os documentos internos continuam públicos nos branches `v2-dev/*` e no
 histórico: a `main` só deixa de mostrá-los na página inicial.
@@ -299,10 +344,14 @@ pip install --upgrade build twine
 ### 3.4 Tag da versão
 
 ```bash
+git checkout main
+git pull origin main
 grep '^version' pyproject.toml      # deve dizer 2.0.0
-git tag v2.0.0
+git tag v2.0.0                      # na main: 45e9cb9 para a 2.0.0
 git push origin v2.0.0
 ```
+
+A proteção da `main` não impede o push de tags (o `v1.0` foi enviado assim).
 
 ### 3.5 Build
 
@@ -410,4 +459,5 @@ configurar.
 | `403 ... isn't allowed to upload to project` | a conta não é dona do projeto | usar a conta da v1 |
 | `twine check` falha no README | Markdown/HTML que o PyPI não renderiza | corrigir o README e refazer o build |
 | `refusing to merge unrelated histories` | o merge da Parte 2.3 sem a opção | usar `--allow-unrelated-histories` (só na primeira vez) |
+| `GH006: Protected branch update failed ... through a pull request` | push direto para a `main`, que é protegida | enviar para `release/...` e integrar por PR (2.3) |
 | `pypher: command not found` ao rodar a pipeline | ambiente onde o astrovello foi instalado não está ativado | ativar o ambiente; o `pypher` é instalado junto |
