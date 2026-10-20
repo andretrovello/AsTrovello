@@ -103,6 +103,15 @@ astrovello --galaxy ngc1087 --surveys PHANGS-HST,PHANGS-JWST --create_kernel
   directories in `Input/` are reported and ignored. See defect E5.
 - PyPHER is called as the `pypher` executable (argument list, no shell), so
   the environment that has it must be on `PATH`.
+- **Branches and releases (since 2026-10-20).** Development happens on
+  `v2-dev/*`. `main` is the v2 release (`45e9cb9`, PR #1) and carries only
+  `src/`, `README.md`, `LICENSE`, `pyproject.toml`, `.gitignore` and the logo.
+  It does not carry CLAUDE.md, the reports, `scripts/`, `notebooks/` or
+  `tests/`. v1 is tag `v1.0`. `main` is **protected**: changes go through a
+  `release/...` branch and a PR merged with "Merge pull request" (never
+  squash/rebase). Internal docs are `git rm`-ed in each release. PyPI
+  publication of 2.0.0 is still pending. The full procedure is in
+  `instruction_package_creation.md`.
 - Verified 2026-10-20: a fresh project directory (path with a space) with only
   `galaxies/ngc1087` and `PSF/` copied in, HST+JWST, `--create_kernel`, gave a
   cube bitwise identical to the 30 Sep `1109x1202` cube.
