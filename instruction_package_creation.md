@@ -35,6 +35,14 @@ Ordem geral:
 
 ## Parte 1: ajustes antes de publicar
 
+> **Feito em 2026-10-20**, no branch `v2-dev/package_adaptation`, depois do
+> commit `d63682e`. O build passou a sair sem nenhum aviso, o `twine check`
+> passa, e os metadados mostram `License-Expression: MIT` e os dois
+> `Project-URL`. As três URLs (logo, repositório, issues) respondem HTTP 200.
+> Além do previsto, saíram do README as linhas de `scripts/forensics/` e
+> `notebooks/` na seção "Project structure", porque esses diretórios não
+> estarão na `main`. O texto abaixo fica como registro.
+
 O PyPI **não aceita reenviar a mesma versão**. Uma versão publicada pode ser
 retirada da listagem ("yank"), mas não substituída. Por isso estes ajustes
 vêm antes.
@@ -88,16 +96,16 @@ commit e o push no branch v2.
 
 ## Parte 2: levar a v2 para a `main`
 
-### 2.0 Decisões a tomar antes
+### 2.0 Decisões (tomadas em 2026-10-20)
 
-| Decisão | Opções |
+| Decisão | Escolha |
 |---|---|
-| Qual branch vai para a `main` | `v2-dev/package_adaptation` direto, ou primeiro para `v2-dev/main` e dele para a `main` (mais organizado) |
-| Nome da tag da v1 | `v1.0`? (o `pyproject` da v1 dizia 0.1.2) |
-| `scripts/forensics/`, `notebooks/`, `tests/` na `main`? | sugestão: fora, como os documentos internos |
-| Reunir os relatórios numa pasta `dev_notes/` no branch v2? | facilita os próximos releases (2.4) |
+| Qual branch vai para a `main` | **`v2-dev/package_adaptation`, direto** |
+| Nome da tag da v1 | **`v1.0`** |
+| `scripts/forensics/`, `notebooks/`, `tests/` na `main`? | **fora** |
+| Reunir os relatórios numa pasta `dev_notes/` no branch v2? | não decidido; opcional, facilita os próximos releases (2.4) |
 
-Abaixo, `<V2>` é o branch escolhido.
+Abaixo, `<V2>` = `v2-dev/package_adaptation`.
 
 ### 2.1 Por que esta parte exige cuidado
 
@@ -172,7 +180,7 @@ git rm -rf --ignore-unmatch \
     package_adaptation_report.md \
     historico_pipeline_astrovello.md \
     instruction_package_creation.md
-# se decidido em 2.0:
+# decidido em 2.0: também fora da main
 git rm -rf --ignore-unmatch scripts notebooks tests
 ```
 

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "2.0.0"
 authors = [
   { name="André Almeida Trovello", email="andretrovello@usp.br" },
 ]
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 description = "Multi-survey (PHANGS-HST, PHANGS-JWST, S4G) PSF-matched datacubes in Jy/pixel for spatially-resolved SED fitting."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +22,10 @@ dependencies = [
     "reproject>=0.14",
     "pypher>=0.7.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/andretrovello/AsTrovello"
+Issues = "https://github.com/andretrovello/AsTrovello/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

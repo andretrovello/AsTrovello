@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="AsTrovello_logo.png" alt="AsTrovello Logo" width="300">
+  <img src="https://raw.githubusercontent.com/andretrovello/AsTrovello/main/AsTrovello_logo.png" alt="AsTrovello Logo" width="300">
 </p>
 
 ## AsTrovello
@@ -36,6 +36,12 @@ Python >= 3.10. A dedicated Conda environment is recommended.
 ```bash
 conda create -n astrovello python=3.11
 conda activate astrovello
+pip install astrovello
+```
+
+Latest development version, from GitHub:
+
+```bash
 pip install git+https://github.com/andretrovello/AsTrovello.git
 ```
 
@@ -164,10 +170,4 @@ src/astrovello/
 ├── utils.py                       pixel scales, wavelength ordering
 ├── check2_psf_matching.py         `astrovello-check-psf`
 └── check3_flux_conservation.py    `astrovello-check-flux`
-scripts/forensics/                 diagnostic scripts from the pipeline's
-                                   development (not installed)
-notebooks/                         exploratory notebooks (not installed)
 ```
-
-The methodology, and the reasons behind each choice, are documented in
-`astrovello_pipeline_documentation.md`.
