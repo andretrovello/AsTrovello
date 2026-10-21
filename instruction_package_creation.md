@@ -1,4 +1,4 @@
-# AsTrovello 2.0: levar a v2 para a `main` e publicar no PyPI
+# AsTrovello 2.0: levar a v2 para a `main`, publicar no PyPI e documentar
 
 Roteiro passo a passo, escrito em 2026-10-20 para ser seguido depois, em
 outro computador (onde estão as chaves do PyPI e do TestPyPI). Documento
@@ -9,7 +9,11 @@ Ordem geral:
 1. commit e push do branch `v2-dev/package_adaptation` (feito ou em andamento);
 2. ajustes finais no `pyproject.toml` e no `README.md` (Parte 1);
 3. v2 na `main`, só com o README de documentação (Parte 2);
-4. tag `v2.0.0` e publicação no PyPI a partir da `main` (Partes 3 e 4).
+4. tag `v2.0.0` e publicação no PyPI a partir da `main` (Partes 3 e 4);
+5. site de documentação, DOI e demais passos depois da publicação (Parte 5).
+
+**Estado em 2026-10-20:** os passos 1 a 4 estão feitos. A 2.0.0 está em
+https://pypi.org/project/astrovello/2.0.0/. O passo 5 está em aberto.
 
 ---
 
@@ -286,6 +290,22 @@ histórico: a `main` só deixa de mostrá-los na página inicial.
 
 ## Parte 3: publicar no PyPI
 
+> **Feito em 2026-10-20**, no WSL do Dell, a partir da `main` em `29ac4c1`.
+> Os dois commits depois do `45e9cb9` só trocam o `AsTrovello_logo.png`,
+> e `src/`, `pyproject.toml` e `README.md` ficaram idênticos.
+> - Tag `v2.0.0` em `29ac4c1`, enviada ao GitHub.
+> - Build sem avisos e `twine check` PASSED nos dois arquivos. O wheel
+>   instalou e rodou (`astrovello --help`) num ambiente conda novo.
+> - **TestPyPI pulado** (3.6): o `~/.pypirc` do WSL só tinha a seção
+>   `[pypi]`. O `twine check` e a instalação local cobriram o que o ensaio
+>   verificaria. Use o TestPyPI quando mudar a forma do pacote (dependências,
+>   build, README com HTML ou imagens).
+> - Upload com o token de 2026-05 do `~/.pypirc` do WSL, que ainda valia.
+>   A permissão do arquivo foi corrigida de `644` para `600`.
+> - Verificação final: `pip install astrovello` num ambiente novo instalou a
+>   2.0.0, e o `astrovello --help` funcionou. A API do PyPI mostra
+>   `License-Expression: MIT` e os links Repository e Issues.
+
 Faça a partir da `main`, já com a v2 e os ajustes da Parte 1. A página do
 PyPI mostra o README do momento do build.
 
@@ -326,6 +346,19 @@ chmod 600 ~/.pypirc
 Sem esse arquivo, o `twine` pede as credenciais a cada envio. O usuário é
 literalmente `__token__`, e a senha é o token.
 
+**O `~` muda com o terminal.** No WSL, `~/.pypirc` é
+`/home/andretrovello/.pypirc`. No Git Bash do Windows, é
+`C:\Users\dedet\.pypirc`, que não existe. Rode o `twine` no terminal onde o
+arquivo está, ou deixe o twine pedir o token e cole na hora. Na hora de colar,
+nada aparece na tela.
+
+**Token ≠ recovery codes.** Os arquivos `*-Recovery-Codes*.txt` são os códigos
+de recuperação do 2FA, para entrar na conta sem o app autenticador. Eles não
+servem para o `twine`. Guarde os dois num gerenciador de senhas (Bitwarden,
+1Password ou KeePassXC), nunca no repositório nem em `.txt` solto numa nuvem.
+Prefira um token por computador, com escopo só do projeto `astrovello`: se uma
+máquina vazar, você revoga só aquele token.
+
 ### 3.3 Preparar o outro computador
 
 Os dados (`Input/`, `Output/`) não são necessários para publicar, só o
@@ -347,7 +380,7 @@ pip install --upgrade build twine
 git checkout main
 git pull origin main
 grep '^version' pyproject.toml      # deve dizer 2.0.0
-git tag v2.0.0                      # na main: 45e9cb9 para a 2.0.0
+git tag v2.0.0                      # feito em 29ac4c1 (ponta da main)
 git push origin v2.0.0
 ```
 
@@ -388,9 +421,16 @@ python -m venv /tmp/teste_astrovello
 
 ### 3.7 Publicação
 
+**Passo sem volta.** Confira antes que `dist/` tem só os dois arquivos da
+versão certa: `twine upload dist/*` envia tudo o que estiver lá.
+
 ```bash
-twine upload dist/*
+ls dist/
+twine upload --non-interactive dist/*
 ```
+
+Com `--non-interactive`, o twine falha com `403` se o token não servir, em vez
+de ficar parado pedindo senha. Se for colar o token na hora, tire a opção.
 
 Página: https://pypi.org/project/astrovello/
 
@@ -401,6 +441,18 @@ python -m venv /tmp/teste_final
 /tmp/teste_final/bin/pip install astrovello
 /tmp/teste_final/bin/pip show astrovello          # Version: 2.0.0
 /tmp/teste_final/bin/astrovello --help
+```
+
+Com conda, a mesma coisa. Crie o ambiente **com** Python, senão o `pip` que
+roda é o de outro ambiente e o teste não vale:
+
+```bash
+conda create -n teste_pypi python=3.11 -y
+conda activate teste_pypi
+which python pip                    # os dois devem estar em envs/teste_pypi/
+pip install astrovello
+astrovello --help
+conda deactivate && conda env remove -n teste_pypi
 ```
 
 A v1 continua disponível com `pip install astrovello==0.1.2`.
@@ -450,6 +502,212 @@ configurar.
 
 ---
 
+## Parte 5: depois da publicação
+
+Planejado em 2026-10-20, nada feito ainda. Ordem recomendada: 5.1 e 5.2
+primeiro (rápidos, dão o DOI e a citação), depois o site (5.3), depois o
+resto (5.4).
+
+### 5.1 DOI pelo Zenodo + GitHub Release
+
+O Zenodo arquiva cada Release do GitHub e dá um **DOI** para ele. Na
+dissertação, você cita o DOI da versão exata que gerou o cubo.
+
+1. Entre em https://zenodo.org com a conta do GitHub.
+2. Menu da conta → **GitHub** → ligue a chave do repositório `AsTrovello`.
+   **Faça isto antes do passo 3**: o Zenodo só arquiva Releases criados
+   depois que a chave está ligada.
+3. No GitHub: aba **Releases** → **Draft a new release** → escolha a tag
+   `v2.0.0` (já existe) → título `AsTrovello 2.0.0` → notas (o que mudou em
+   relação à v1: JWST, PSF matching por banda, gates de validação, pacote pip)
+   → **Publish release**.
+4. Em alguns minutos o DOI aparece no Zenodo. Ele dá dois DOIs:
+   - **DOI da versão** (só a 2.0.0): use na dissertação.
+   - **DOI do conceito** (sempre a versão mais nova): use no README.
+5. Coloque o badge do DOI do conceito no README (o Zenodo dá o Markdown).
+   Ele entra na `main` no próximo release (2.4).
+
+Releases futuros: crie a tag (3.4) e depois o Release no GitHub. O Zenodo
+gera o DOI da versão nova sozinho.
+
+### 5.2 `CITATION.cff`
+
+Arquivo na raiz do repositório. Com ele, o GitHub mostra o botão **Cite this
+repository**, com APA e BibTeX prontos. O GitHub lê o arquivo do branch
+padrão, então ele **precisa estar na `main`**: entra pelo PR do próximo
+release e não deve ir para a lista de remoção da 2.3/2.4.
+
+```yaml
+cff-version: 1.2.0
+message: "If you use AsTrovello, please cite it as below."
+title: "AsTrovello"
+version: 2.0.0
+date-released: 2026-10-20
+doi: 10.5281/zenodo.XXXXXXX        # DOI da versão, do 5.1
+license: MIT
+repository-code: "https://github.com/andretrovello/AsTrovello"
+authors:
+  - family-names: Trovello
+    given-names: André Almeida
+    affiliation: "IAG-USP"
+    orcid: "https://orcid.org/0000-0000-0000-0000"   # o seu
+```
+
+Confira o arquivo em https://citation-file-format.github.io (há um
+validador) antes do commit.
+
+### 5.3 Site de documentação (MkDocs Material + GitHub Pages)
+
+**Por que MkDocs Material e não Sphinx:** é Markdown, que você já escreve;
+basta um `mkdocs.yml` e uma pasta `docs/`; e você vê o site enquanto edita
+(`mkdocs serve`). O Sphinx (com Read the Docs) é o padrão histórico em
+astronomia (astropy, photutils) e tem o `autodoc` mais maduro, mas vale a pena
+se a referência da API virar o centro da documentação. Hoje o centro é o
+método. A referência da API pode vir depois, com `mkdocstrings`.
+
+O site fica em `https://andretrovello.github.io/AsTrovello/`.
+
+#### Decisão pendente: onde ficam as fontes do site
+
+| Opção | Prós | Contras |
+|---|---|---|
+| **`docs/` + `mkdocs.yml` na `main`** (recomendado) | simples; o site sempre descreve o código publicado | toda correção do site passa por PR na `main` |
+| fontes no branch v2, publicar só o site gerado | a `main` continua só com o pacote | mais trabalho; o site pode descrever código ainda não lançado |
+
+Documentação pública não é documento interno, então pôr `docs/` na `main`
+não contraria a regra da Parte 2. Se escolher a `main`: **não** inclua `docs/`
+nem `mkdocs.yml` no `git rm` da 2.3/2.4, e acrescente `site/` ao `.gitignore`
+(é a pasta que o `mkdocs build` gera).
+
+#### Montar localmente
+
+Num branch novo a partir do branch v2, por exemplo `v2-dev/docs`:
+
+```bash
+pip install mkdocs-material
+mkdocs new .                        # cria mkdocs.yml e docs/index.md
+mkdocs serve                        # abre em http://127.0.0.1:8000, recarrega ao salvar
+```
+
+`mkdocs.yml` inicial:
+
+```yaml
+site_name: AsTrovello
+site_url: https://andretrovello.github.io/AsTrovello/
+repo_url: https://github.com/andretrovello/AsTrovello
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - How it works: method.md
+  - CLI reference: cli.md
+  - Output cube: output.md
+  - Validation: validation.md
+  - Limitations: limitations.md
+  - Changelog: changelog.md
+  - Citing: citing.md
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+```
+
+#### O que vai em cada página
+
+| Página | Conteúdo | Fonte |
+|---|---|---|
+| Installation | `pip install astrovello`; PyPHER no `PATH`; Python >= 3.10 | README |
+| Quickstart | layout de `Input/<SURVEY>/galaxies/<galaxy>/` e `PSF/`; um comando completo; o que sai em `Output/` | CLAUDE.md Sect. 1 |
+| How it works | as quatro etapas; convolução antes da reprojeção; master por r80; grid de convolução por banda; binning pela média | doc metodológico |
+| CLI reference | todos os flags (`--surveys`, `--create_kernel`, `--preflight_only`, `--skip_checks`, `--mode`...) | `astrovello --help` |
+| Output cube | Jy/pixel, WCS, `PIXAREA`; chaves `PSFTARGT`, `PSFMATCH`, `PSFRESID`, `NATPXAR`, `BINFACT` | `cube.py`, headers |
+| Validation | os dois gates, limiares, o que garantem **e o que não garantem** (limite do Check 2) | `validation.py`, CLAUDE.md Sect. 4a |
+| Limitations | reprojeção, não registro astrométrico; só HST↔JWST verificado; C4 para cubos com S4G | CLAUDE.md topo e C4 |
+| Changelog | 2.0.0 contra a v1 (0.1.x) | |
+| Citing | DOI (5.1) e BibTeX (5.2) | |
+
+**Cuidado:** o `astrovello_pipeline_documentation.md` mistura o método com o
+histórico da auditoria. Use-o como **fonte** e reescreva o que o código faz
+hoje, sem copiar o arquivo inteiro. Confira cada afirmação contra o código
+(CLAUDE.md Sect. 7: o doc é especificação a verificar, não descrição).
+
+#### Publicar com GitHub Actions
+
+1. No GitHub: **Settings → Pages → Source: GitHub Actions**.
+2. Crie `.github/workflows/docs.yml`:
+
+```yaml
+name: Docs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install mkdocs-material
+      - run: mkdocs build --strict        # falha com link quebrado
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+3. O site sai a cada push na `main` (ou seja, a cada PR integrado), ou à mão
+   pela aba **Actions → Docs → Run workflow**.
+
+Confira as versões atuais das actions na documentação do GitHub Pages antes
+de configurar.
+
+#### Depois que o site estiver no ar
+
+Descomente no `pyproject.toml`:
+
+```toml
+Documentation = "https://andretrovello.github.io/AsTrovello/"
+```
+
+O link só aparece no PyPI **na próxima versão** (2.0.1 ou 2.1.0): os
+metadados de uma versão publicada não mudam.
+
+### 5.4 Depois
+
+1. **Testes + CI** (defeito E6 do CLAUDE.md). Alguns casos `pytest` sobre
+   FITS sintéticos, rodando a cada push por GitHub Actions. O A1 (WCS 4800×
+   errado) teria sido pego por uma linha de `assert`. Dá segurança para o C4.
+2. **Trusted publishing** (Parte 4). Publicar vira `git push origin vX.Y.Z`,
+   sem token guardado.
+3. **ASCL** (https://ascl.net): registro de software astronômico, indexado
+   pelo ADS. Submissão curta, feita uma vez.
+4. **JOSS** (https://joss.theoj.org), depois da dissertação: artigo curto
+   revisado sobre o software. Exige documentação, testes e instruções de
+   contribuição, ou seja, 5.3 e 5.4.1.
+
+---
+
 ## Problemas comuns
 
 | Mensagem | Causa | O que fazer |
@@ -461,3 +719,7 @@ configurar.
 | `refusing to merge unrelated histories` | o merge da Parte 2.3 sem a opção | usar `--allow-unrelated-histories` (só na primeira vez) |
 | `GH006: Protected branch update failed ... through a pull request` | push direto para a `main`, que é protegida | enviar para `release/...` e integrar por PR (2.3) |
 | `pypher: command not found` ao rodar a pipeline | ambiente onde o astrovello foi instalado não está ativado | ativar o ambiente; o `pypher` é instalado junto |
+| `twine upload` fica parado, sem mensagem | está esperando a senha, num terminal onde não dá para digitar | usar `--non-interactive`, ou rodar num terminal normal e colar o token |
+| `twine` pede o token embora o `.pypirc` exista | rodando no Git Bash, cujo `~` é `C:\Users\dedet`, e não no WSL | rodar no WSL, ou colar o token |
+| `twine: command not found` | o ambiente ativo não é o que tem o twine | `ls ~/miniconda3/envs/*/bin/twine` mostra onde está |
+| o teste instala o pacote no ambiente errado | ambiente conda criado sem `python=...`, então o `pip` é o de outro ambiente | `conda create -n <nome> python=3.11`; conferir com `which python pip` |
