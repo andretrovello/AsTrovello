@@ -4,6 +4,7 @@
 
 ## AsTrovello
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23569095.svg)](https://doi.org/10.5281/zenodo.23569095)
 
 **AsTrovello** builds multi-survey datacubes of a galaxy for spatially-resolved
 SED fitting. It takes **PHANGS-HST**, **PHANGS-JWST** and **S4G (Spitzer/IRAC)**
@@ -143,6 +144,16 @@ Run from the same project directory, after the pipeline:
 astrovello-check-psf                     # PSF matching, every kernel
 astrovello-check-flux --galaxy ngc1087   # flux conservation through reprojection
 ```
+
+---
+
+## Citing
+
+If you use AsTrovello, please cite it through Zenodo:
+[doi:10.5281/zenodo.23569095](https://doi.org/10.5281/zenodo.23569095)
+(all versions). Each release also has its own DOI, listed on that page; cite
+the one for the version you used. GitHub's **Cite this repository** button
+gives the reference in APA and BibTeX.
 
 ---
 

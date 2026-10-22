@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+title: AsTrovello
+message: 'If you use AsTrovello, please cite it as below.'
+type: software
+authors:
+  - family-names: Trovello
+    given-names: André Almeida
+    affiliation: >-
+      Instituto de Astronomia, Geofísica e Ciências
+      Atmosféricas, Universidade de São Paulo
+    orcid: 'https://orcid.org/0009-0007-2118-3749'
+abstract: >-
+  Multi-survey (PHANGS-HST, PHANGS-JWST, S4G) PSF-matched
+  datacubes in Jy/pixel for spatially-resolved SED fitting.
+keywords:
+  - PSF matching
+  - datacube
+  - SED fitting
+  - PHANGS
+  - JWST
+  - Spitzer
+  - image convolution
+# Concept DOI: always resolves to the newest version. The version DOI of
+# each release is only minted when the release is published, so it cannot
+# be in this file at release time.
+doi: 10.5281/zenodo.23569095
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23569095
+    description: Concept DOI (all versions, resolves to the latest)
+  - type: doi
+    value: 10.5281/zenodo.23569096
+    description: Version 2.0.0
+repository-code: 'https://github.com/andretrovello/AsTrovello'
+license: MIT
+version: 2.0.0
+date-released: '2026-10-20'
