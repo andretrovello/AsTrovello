@@ -4,6 +4,7 @@
 
 ## AsTrovello
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23569095.svg)](https://doi.org/10.5281/zenodo.23569095)
 
 **AsTrovello** builds multi-survey datacubes of a galaxy for spatially-resolved
 SED fitting. It takes **PHANGS-HST**, **PHANGS-JWST** and **S4G (Spitzer/IRAC)**
@@ -37,12 +38,6 @@ Python >= 3.10. A dedicated Conda environment is recommended.
 conda create -n astrovello python=3.11
 conda activate astrovello
 pip install astrovello
-```
-
-Latest development version, from GitHub:
-
-```bash
-pip install git+https://github.com/andretrovello/AsTrovello.git
 ```
 
 From a local clone (editable, for development):
@@ -171,3 +166,31 @@ src/astrovello/
 ├── check2_psf_matching.py         `astrovello-check-psf`
 └── check3_flux_conservation.py    `astrovello-check-flux`
 ```
+
+---
+
+## Citing
+
+If you use AsTrovello in published work, please cite it.
+
+- **To cite the software in general**, use the concept DOI, which always
+  resolves to the latest release:
+  [10.5281/zenodo.23569095](https://doi.org/10.5281/zenodo.23569095)
+- **For reproducibility**, cite the DOI of the exact version you used. Each
+  release has its own DOI, listed under *Versions* on the
+  [Zenodo record](https://doi.org/10.5281/zenodo.23569095), where you can
+  also export a citation for that version.
+
+```bibtex
+@software{Trovello_AsTrovello,
+  author    = {Trovello, Andr{\'e} Almeida},
+  title     = {{AsTrovello}},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23569095},
+  url       = {https://doi.org/10.5281/zenodo.23569095}
+}
+```
+
+The **Cite this repository** button on GitHub gives the same reference in APA
+and BibTeX formats.
