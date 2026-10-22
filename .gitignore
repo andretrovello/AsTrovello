@@ -10,6 +10,7 @@ Output/
 src/*.egg-info/
 build/
 dist/
+site/
 
 # Ignore temp files
 __pycache__/
