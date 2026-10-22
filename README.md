@@ -40,12 +40,6 @@ conda activate astrovello
 pip install astrovello
 ```
 
-Latest development version, from GitHub:
-
-```bash
-pip install git+https://github.com/andretrovello/AsTrovello.git
-```
-
 From a local clone (editable, for development):
 
 ```bash
@@ -147,16 +141,6 @@ astrovello-check-flux --galaxy ngc1087   # flux conservation through reprojectio
 
 ---
 
-## Citing
-
-If you use AsTrovello, please cite it through Zenodo:
-[doi:10.5281/zenodo.23569095](https://doi.org/10.5281/zenodo.23569095)
-(all versions). Each release also has its own DOI, listed on that page; cite
-the one for the version you used. GitHub's **Cite this repository** button
-gives the reference in APA and BibTeX.
-
----
-
 ## Data sources
 
 - **PHANGS-HST:** https://archive.stsci.edu/hlsp/phangs
@@ -182,3 +166,31 @@ src/astrovello/
 ├── check2_psf_matching.py         `astrovello-check-psf`
 └── check3_flux_conservation.py    `astrovello-check-flux`
 ```
+
+---
+
+## Citing
+
+If you use AsTrovello in published work, please cite it.
+
+- **To cite the software in general**, use the concept DOI, which always
+  resolves to the latest release:
+  [10.5281/zenodo.23569095](https://doi.org/10.5281/zenodo.23569095)
+- **For reproducibility**, cite the DOI of the exact version you used. Each
+  release has its own DOI, listed under *Versions* on the
+  [Zenodo record](https://doi.org/10.5281/zenodo.23569095), where you can
+  also export a citation for that version.
+
+```bibtex
+@misc{Trovello_AsTrovello,
+  author    = {Trovello, Andr{\'e} Almeida},
+  title     = {{AsTrovello}},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23569095},
+  url       = {https://doi.org/10.5281/zenodo.23569095}
+}
+```
+
+The **Cite this repository** button on GitHub gives an equivalent reference in APA
+and BibTeX formats.
