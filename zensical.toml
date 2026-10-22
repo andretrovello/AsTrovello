@@ -11,17 +11,40 @@ repo_name = "andretrovello/AsTrovello"
 edit_uri = "edit/main/docs/"
 
 nav = [
-  { "Get started" = "index.md" },
-  { "Markdown in 5min" = "markdown.md" },
+  { "Home" = "index.md" },
+
+  { "Getting Started" = [
+      { "Installation" = "installation.md" },
+      { "Quick Start" = "quickstart.md" },
+  ] },
+
+  { "User Guide" = [
+      { "How it Works" = "method.md" },
+      { "CLI Reference" = "cli.md" },
+      { "Output Cube" = "output.md" },
+  ] },
+
+  { "Reliability" = [
+      { "Validation" = "validation.md" },
+      { "Limitations" = "limitations.md" },
+  ] },
+
+  { "About" = [
+      { "Changelog" = "changelog.md" },
+      { "Citing" = "citing.md" },
+  ] },
 ]
 
 # extra_css = ["stylesheets/extra.css"]
-# extra_javascript = ["javascripts/extra.js"]
+extra_javascript = [
+  "javascripts/mathjax.js",
+  "https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js",
+]
 
 [project.theme]
 # variant = "classic"
 # custom_dir = "overrides"
-# favicon = "images/favicon.png"
+favicon = "assets/logo.png"
 language = "en"
 features = [
   "announce.dismiss",
@@ -52,7 +75,7 @@ features = [
   # "toc.integrate",
 ]
 
-# logo = "assets/logo.png"
+logo = "assets/logo.png"
 
 # [project.theme.icon]
 # logo = "lucide/smile"
@@ -78,13 +101,13 @@ scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
 
-# [[project.extra.social]]
-# icon = "fontawesome/brands/github"
-# link = "https://github.com/user/repo"
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/andretrovello/AsTrovello"
 
-# [[project.extra.social]]
-# icon = "fontawesome/brands/mastodon"
-# link = "https://fosstodon.org/@user"
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/astrovello/"
 
 [project.markdown_extensions]
 abbr = {}
