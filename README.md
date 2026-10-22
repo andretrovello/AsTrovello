@@ -182,7 +182,7 @@ If you use AsTrovello in published work, please cite it.
   also export a citation for that version.
 
 ```bibtex
-@software{Trovello_AsTrovello,
+@misc{Trovello_AsTrovello,
   author    = {Trovello, Andr{\'e} Almeida},
   title     = {{AsTrovello}},
   year      = {2026},
@@ -192,5 +192,5 @@ If you use AsTrovello in published work, please cite it.
 }
 ```
 
-The **Cite this repository** button on GitHub gives the same reference in APA
+The **Cite this repository** button on GitHub gives an equivalent reference in APA
 and BibTeX formats.
