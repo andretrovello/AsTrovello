@@ -104,19 +104,34 @@ astrovello --galaxy ngc1087 --surveys PHANGS-HST,PHANGS-JWST --create_kernel
 - PyPHER is called as the `pypher` executable (argument list, no shell), so
   the environment that has it must be on `PATH`.
 - **Branches and releases (since 2026-10-20).** Development happens on
-  `v2-dev/*`. `main` is the v2 release (PR #1 merged as `45e9cb9`, now at
-  `29ac4c1` after two logo-only commits) and carries only
-  `src/`, `README.md`, `LICENSE`, `pyproject.toml`, `.gitignore` and the logo.
+  `v2-dev/*`. `main` is the v2 release (PR #1 merged as `45e9cb9`, then two
+  logo-only commits to `29ac4c1`, then PR #2 merged as `7aa7a7a`) and carries
+  only `src/`, `README.md`, `LICENSE`, `pyproject.toml`, `.gitignore`,
+  `CITATION.cff` and the logo.
   It does not carry CLAUDE.md, the reports, `scripts/`, `notebooks/` or
-  `tests/`. v1 is tag `v1.0`. `main` is **protected**: changes go through a
-  `release/...` branch and a PR merged with "Merge pull request" (never
-  squash/rebase). Internal docs are `git rm`-ed in each release.
+  `tests/`. v1 is tag `v1.0`. `main` is **no longer protected** (the author
+  removed the protection on 2026-10-22), but the workflow is unchanged by
+  choice: changes go through a `release/...` branch and a PR merged with
+  "Merge pull request" (never squash/rebase). Nothing now stops a direct
+  push or force push to `main`, so never push there from a `v2-dev/*`
+  branch. Internal docs are `git rm`-ed in each release.
   **2.0.0 is on PyPI** (2026-10-20, tag `v2.0.0` = `29ac4c1`;
   `pip install astrovello`). v1 stays available as `astrovello==0.1.2`.
+  **Zenodo (2026-10-22):** GitHub Release `AsTrovello 2.0.0` published from
+  tag `v2.0.0`. Version DOI `10.5281/zenodo.23569096` (cite this one in the
+  dissertation, with commit `29ac4c1`); concept DOI `10.5281/zenodo.23569095`
+  (always the latest; used in the README badge and `CITATION.cff`). The two
+  numbers are consecutive (`...095` concept, `...096` version): check the
+  last digits whenever one is quoted. Release
+  date is **2026-10-20** everywhere (Brasília time; the PyPI upload was
+  2026-10-21 02:41 UTC). `CITATION.cff` + DOI badge + README
+  *Citing* section are on `main` (commit `e01026d`, PR #2, 2026-10-22).
   The full procedure is in `instruction_package_creation.md`. Its Part 5
-  lists the open next steps: Zenodo DOI + GitHub Release, `CITATION.cff`,
-  MkDocs site on GitHub Pages, tests/CI. If `docs/`, `mkdocs.yml` or
-  `CITATION.cff` go on `main`, keep them out of the release `git rm` list.
+  lists the remaining steps (Zenodo metadata for 2.0.0 done 2026-10-22, see
+  its 5.1): MkDocs site on GitHub
+  Pages, tests/CI. If `docs/`, `mkdocs.yml` or `CITATION.cff` go on `main`,
+  keep them out of the release `git rm` list. Each release must bump
+  `version` and `date-released` in `CITATION.cff`.
 - Verified 2026-10-20: a fresh project directory (path with a space) with only
   `galaxies/ngc1087` and `PSF/` copied in, HST+JWST, `--create_kernel`, gave a
   cube bitwise identical to the 30 Sep `1109x1202` cube.

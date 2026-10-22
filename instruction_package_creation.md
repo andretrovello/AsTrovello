@@ -15,6 +15,23 @@ Ordem geral:
 **Estado em 2026-10-20:** os passos 1 a 4 estão feitos. A 2.0.0 está em
 https://pypi.org/project/astrovello/2.0.0/. O passo 5 está em aberto.
 
+> **DOIs do Zenodo: não confundir** (registrados em 2026-10-22, detalhes na 5.1)
+>
+> | DOI | O que é | Onde usar |
+> |---|---|---|
+> | `10.5281/zenodo.23569095` | **conceito**: todas as versões; abre sempre a mais recente | README, badge, `CITATION.cff` |
+> | `10.5281/zenodo.23569096` | **versão 2.0.0**: aponta para a 2.0.0 para sempre | dissertação (com o commit `29ac4c1`) |
+>
+> - Os números são **consecutivos** (`…095` e `…096`): é fácil trocar um
+>   pelo outro ao copiar. Confira o final antes de colar.
+> - Hoje os dois abrem a mesma página, porque a 2.0.0 é a única versão.
+>   Quando sair a próxima (ex.: 2.1.0), o `…095` passa a abrir a nova, e o
+>   `…096` continua na 2.0.0.
+> - Cada versão nova ganha um DOI de versão próprio, gerado pelo Zenodo ao
+>   publicar o Release. O DOI do conceito nunca muda.
+> - Badge do README (aponta para o conceito):
+>   `[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23569095.svg)](https://doi.org/10.5281/zenodo.23569095)`
+
 ---
 
 ## 0. O que já foi verificado (2026-10-20)
@@ -227,8 +244,10 @@ Commit:
 git commit -m "AsTrovello 2.0"
 ```
 
-**A `main` do GitHub é protegida e só aceita pull request.** Um
-`git push origin main` é recusado com `GH006`. Leve o commit por PR:
+**A `main` do GitHub era protegida e só aceitava pull request** (até
+2026-10-22, quando a proteção foi retirada). Um `git push origin main` era
+recusado com `GH006`. O fluxo por PR continua sendo o adotado. Leve o commit
+por PR:
 
 ```bash
 git push origin main:release/v2.0.0     # o conteúdo da main local vai para um branch novo no GitHub
@@ -259,8 +278,11 @@ README, a licença, o `pyproject.toml` e o `src/`.
 ### 2.4 Próximos releases (v2 → `main`)
 
 Depois do 2.3, os dois lados passam a ter um ancestral comum, e o merge vira
-o normal. Como a `main` é protegida, prepare o release num branch criado a
-partir dela e leve-o por PR, como no 2.3:
+o normal. Prepare o release num branch criado a partir dela e leve-o por PR,
+como no 2.3. A `main` não é mais protegida (desde 2026-10-22), então nada
+impede um push direto ou um force push: o PR é uma escolha, não uma
+exigência do GitHub. Nunca dê push para a `main` a partir de um branch
+`v2-dev/*`, que levaria os documentos internos junto.
 
 ```bash
 git checkout main
@@ -504,11 +526,42 @@ configurar.
 
 ## Parte 5: depois da publicação
 
-Planejado em 2026-10-20, nada feito ainda. Ordem recomendada: 5.1 e 5.2
-primeiro (rápidos, dão o DOI e a citação), depois o site (5.3), depois o
-resto (5.4).
+Planejado em 2026-10-20. Estado em 2026-10-22: 5.1 feito (incluindo os
+metadados no Zenodo); 5.2 feito (na `main` pelo PR #2). Depois vêm o site
+(5.3) e o resto (5.4).
 
 ### 5.1 DOI pelo Zenodo + GitHub Release
+
+> **Feito em 2026-10-22.**
+> - Release `AsTrovello 2.0.0` publicado no GitHub a partir da tag `v2.0.0`
+>   (`29ac4c1`), com as release notes em inglês. Era o primeiro Release do
+>   repositório, por isso a opção "Set as the latest release" não aparece.
+> - Registro: https://zenodo.org/records/23569096
+> - **DOI da versão 2.0.0: `10.5281/zenodo.23569096`** (dissertação).
+> - **DOI do conceito: `10.5281/zenodo.23569095`** (README e `CITATION.cff`).
+> - A descrição foi importada do Release e renderizada corretamente.
+> - Data de lançamento: **2026-10-20** em todos os lugares (notes,
+>   `CITATION.cff`). O upload no PyPI foi 2026-10-21 02:41 UTC, ou seja,
+>   2026-10-20 23:41 em Brasília.
+> - **Metadados revisados em 2026-10-22.** O Zenodo os montou a partir da
+>   conta do GitHub (título `andretrovello/AsTrovello: AsTrovello 2.0.0`,
+>   autor `André Trovello` sem afiliação, sem palavras-chave, data
+>   2026-10-22). Corrigidos em **Edit** → **Publish** (DOI e arquivo não
+>   mudam). Estado conferido pela API:
+>   - título `AsTrovello 2.0.0`; data de publicação `2026-10-20`;
+>   - autor `Trovello, André Almeida`, ORCID `0009-0007-2118-3749`,
+>     afiliação "Instituto de Astronomia, Geofísica e Ciências Atmosféricas,
+>     Universidade de São Paulo" (texto livre, igual ao `CITATION.cff`);
+>   - palavras-chave: PSF matching, datacube, SED fitting, PHANGS, HST,
+>     JWST, Spitzer, S4G, image convolution, galaxies, multi-wavelength
+>     imaging, astronomy software;
+>   - sem contribuidores. A orientadora pode ser incluída depois, em
+>     **Contributors**, role *Supervisor*. Cada versão tem metadados
+>     próprios: nas próximas, isso teria de ser refeito à mão, ou ir num
+>     `.zenodo.json`.
+> - Nos próximos Releases o Zenodo deve preencher os metadados a partir do
+>   `CITATION.cff`. Confira o registro depois de cada um.
+> - O badge (passo 5) entrou na `main` pelo PR #2, junto do 5.2.
 
 O Zenodo arquiva cada Release do GitHub e dá um **DOI** para ele. Na
 dissertação, você cita o DOI da versão exata que gerou o cubo.
@@ -537,24 +590,72 @@ repository**, com APA e BibTeX prontos. O GitHub lê o arquivo do branch
 padrão, então ele **precisa estar na `main`**: entra pelo PR do próximo
 release e não deve ir para a lista de remoção da 2.3/2.4.
 
+> **Feito em 2026-10-22** no branch `release/citation-doi` (commit
+> `e01026d`, criado a partir da `main` em `29ac4c1`, já no GitHub). Leva o
+> `CITATION.cff` e, no README, o badge do DOI do conceito e uma seção
+> *Citing*. Validado com `cffconvert --validate` (schema 1.2.0). Integrado
+> na `main` pelo PR #2 com **Merge pull request** (merge commit `7aa7a7a`);
+> o branch foi apagado. Conferido: a árvore da `main` é idêntica à do
+> `e01026d`, o badge e o link do DOI do conceito respondem.
+
+O arquivo como está na `main`:
+
 ```yaml
 cff-version: 1.2.0
-message: "If you use AsTrovello, please cite it as below."
-title: "AsTrovello"
-version: 2.0.0
-date-released: 2026-10-20
-doi: 10.5281/zenodo.XXXXXXX        # DOI da versão, do 5.1
-license: MIT
-repository-code: "https://github.com/andretrovello/AsTrovello"
+title: AsTrovello
+message: 'If you use AsTrovello, please cite it as below.'
+type: software
 authors:
   - family-names: Trovello
     given-names: André Almeida
-    affiliation: "IAG-USP"
-    orcid: "https://orcid.org/0000-0000-0000-0000"   # o seu
+    affiliation: >-
+      Instituto de Astronomia, Geofísica e Ciências
+      Atmosféricas, Universidade de São Paulo
+    orcid: 'https://orcid.org/0009-0007-2118-3749'
+abstract: >-
+  Multi-survey (PHANGS-HST, PHANGS-JWST, S4G) PSF-matched
+  datacubes in Jy/pixel for spatially-resolved SED fitting.
+keywords:
+  - PSF matching
+  - datacube
+  - SED fitting
+  - PHANGS
+  - JWST
+  - Spitzer
+  - image convolution
+doi: 10.5281/zenodo.23569095
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23569095
+    description: Concept DOI (all versions, resolves to the latest)
+  - type: doi
+    value: 10.5281/zenodo.23569096
+    description: Version 2.0.0
+repository-code: 'https://github.com/andretrovello/AsTrovello'
+license: MIT
+version: 2.0.0
+date-released: '2026-10-20'
 ```
 
-Confira o arquivo em https://citation-file-format.github.io (há um
-validador) antes do commit.
+**Por que o `doi` principal é o do conceito, e não o da versão** (o plano
+original era o da versão): o Zenodo só gera o DOI de uma versão quando o
+Release é publicado, depois do commit que entra na `main`. Com o DOI da
+versão no campo principal, o arquivo estaria sempre um release atrasado. O
+DOI do conceito nunca muda. Os DOIs de versão vão em `identifiers`. Para a
+dissertação nada muda: cite o DOI da versão.
+
+**No próximo release:** acrescente às `keywords` as cinco que foram postas
+no Zenodo em 2026-10-22 e não estão no arquivo: `HST`, `S4G`, `galaxies`,
+`multi-wavelength imaging`, `astronomy software`. Assim o arquivo e o
+registro ficam com a mesma lista.
+
+**A cada release:** atualize `version` e `date-released` no PR do release.
+Depois de publicado, acrescente o DOI da versão nova em `identifiers` no
+release seguinte (opcional; a página do Zenodo lista todas as versões).
+
+Para validar antes do commit: `pip install cffconvert`, depois
+`cffconvert --validate` na raiz do repositório (ou o validador em
+https://citation-file-format.github.io).
 
 ### 5.3 Site de documentação (MkDocs Material + GitHub Pages)
 
@@ -717,7 +818,7 @@ metadados de uma versão publicada não mudam.
 | `403 ... isn't allowed to upload to project` | a conta não é dona do projeto | usar a conta da v1 |
 | `twine check` falha no README | Markdown/HTML que o PyPI não renderiza | corrigir o README e refazer o build |
 | `refusing to merge unrelated histories` | o merge da Parte 2.3 sem a opção | usar `--allow-unrelated-histories` (só na primeira vez) |
-| `GH006: Protected branch update failed ... through a pull request` | push direto para a `main`, que é protegida | enviar para `release/...` e integrar por PR (2.3) |
+| `GH006: Protected branch update failed ... through a pull request` | push direto para a `main` enquanto ela era protegida (até 2026-10-22) | enviar para `release/...` e integrar por PR (2.3) |
 | `pypher: command not found` ao rodar a pipeline | ambiente onde o astrovello foi instalado não está ativado | ativar o ambiente; o `pypher` é instalado junto |
 | `twine upload` fica parado, sem mensagem | está esperando a senha, num terminal onde não dá para digitar | usar `--non-interactive`, ou rodar num terminal normal e colar o token |
 | `twine` pede o token embora o `.pypirc` exista | rodando no Git Bash, cujo `~` é `C:\Users\dedet`, e não no WSL | rodar no WSL, ou colar o token |
