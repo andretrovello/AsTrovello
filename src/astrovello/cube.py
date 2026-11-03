@@ -159,6 +159,9 @@ def create_data_cube(
     cubo = np.empty((len(ordered_filters), ny, nx), dtype=np.float32)
 
     # 4. Sky subtraction, now on the already-cropped arrays
+    sky_levels = {filt: 0.0 for filt in ordered_filters}   # recorded in the cube header
+    if not sky_subtraction:
+        print('Sky subtraction: OFF (--no_sky_subtraction); the bands keep their input zero level.')
     if sky_subtraction:
         sub_images = []
         print('Performing sky subtraction...\n')
@@ -177,6 +180,7 @@ def create_data_cube(
             
             # Subtract the sky level
             img_sub = np.where(valid_pixels_mask, img - regular_dict['sclip_median'], np.nan)
+            sky_levels[filt] = regular_dict['sclip_median']
             
             # Statistics after subtraction
             subtracted_dict = sky_level(img_sub[valid_pixels_mask])
@@ -238,6 +242,12 @@ def create_data_cube(
     
     for i, filt in enumerate(ordered_filters):
         cube_header[f'FILT{i+1:03d}'] = filt
+
+    # Which zero level this cube carries, so a cube can always be told apart
+    # from one built with the other setting (the filename does not change).
+    cube_header['SKYSUB'] = (bool(sky_subtraction), 'global sigma-clipped median subtracted per band')
+    for i, filt in enumerate(ordered_filters):
+        cube_header[f'SKY{i+1:03d}'] = (float(sky_levels[filt]), f'{filt}: level subtracted (Jy/pixel)')
 
     # --- Header comments ---
     # Unique surveys contributing to this cube

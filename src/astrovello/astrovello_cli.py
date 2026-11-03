@@ -490,6 +490,11 @@ def main():
                         help='Generate a signal-based sky mask for the final cube')
     parser.add_argument('--sigma', type=float, default=2.0,
                         help='Sigma threshold for the sky mask cut')
+    parser.add_argument('--no_sky_subtraction', action='store_true',
+                        help='Do not subtract a sky level when building the cube. The default '
+                             'subtracts the sigma-clipped median of the WHOLE field, which is '
+                             'only a sky estimate when most of the field is empty sky; in a '
+                             'field filled by the galaxy (e.g. PHANGS) it removes galaxy light')
     parser.add_argument('--force_convolution', action='store_true',
                         help='Force convolution even if convolved files exist')
     parser.add_argument('--bin_factor', type=int, default=None,
@@ -932,7 +937,7 @@ def main():
             apply_mask=args.apply_mask,
             n_sigma=args.sigma,
             padding=50,
-            sky_subtraction=True,
+            sky_subtraction=not args.no_sky_subtraction,
         )
 
         print(200 * '-' + "\n>>> DATACUBE COMPLETE\n" + 100 * '#')
