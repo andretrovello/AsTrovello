@@ -34,7 +34,11 @@ class BASE_Driver:
         if suffix_key in self.config:
             # O f-string no glob permite injetar variáveis caso o sufixo use o nome da galáxia!
             pattern = self.config[suffix_key]
-            return list(dir_path.glob(pattern))
+            # sorted: Path.glob follows the filesystem's directory order, which
+            # differs between macOS (APFS) and Linux (ext4). Anything that
+            # looks at the first file of a survey would then change with the
+            # machine.
+            return sorted(dir_path.glob(pattern))
             
         raise ValueError(f"Mode '{mode}' not configured for {self.__class__.__name__}.")
 

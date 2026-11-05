@@ -125,8 +125,11 @@ def _check_grids(img_files, drivers, survey_list, r80, fwhm_dict, bin_factors,
         if not survey_imgs:
             continue
 
-        native = science_pixel_scale(
-            survey_imgs[0], hdu_ext=drivers[survey].get_hdu_sci_position)
+        # the coarsest native grid of the survey is the worst case for both
+        # the master sampling and the smallest blur (same rule as
+        # derive_bin_factors); imgs[0] depended on the file order
+        native = max(science_pixel_scale(p, hdu_ext=drivers[survey].get_hdu_sci_position)
+                     for p in survey_imgs)
         factor = bin_factors.get(survey, 1)
         grid = native * factor
 
@@ -173,7 +176,7 @@ def _check_master_grid(science_bands, bin_factors, master, errors):
 
 
 def _estimate_cube_size(img_files, drivers, science_bands, master_survey,
-                        bin_factors, warns):
+                        bin_factors, warns, master=None):
     """Rough size of the final cube, in pixels and GB."""
     if not master_survey:
         return None
@@ -185,8 +188,11 @@ def _estimate_cube_size(img_files, drivers, science_bands, master_survey,
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        header = fits.getheader(
-            imgs[0], ext=drivers[master_survey].get_hdu_sci_position)
+        # the cube lives on the MASTER's grid, so size it from the master image
+        drv = drivers[master_survey]
+        ref = next((p for p in imgs if drv.get_sci_filter_name(str(p)) == master),
+                   imgs[0])
+        header = fits.getheader(ref, ext=drv.get_hdu_sci_position)
 
     n_px = int(header.get('NAXIS1', 0)) * int(header.get('NAXIS2', 0))
     n_px //= max(bin_factors.get(master_survey, 1), 1) ** 2
@@ -243,7 +249,7 @@ def preflight(img_files, psf_files, drivers, survey_list,
         master_survey = _check_master_grid(science_bands, bin_factors, master,
                                            errors)
         _estimate_cube_size(img_files, drivers, science_bands, master_survey,
-                            bin_factors, warns)
+                            bin_factors, warns, master=master)
     else:
         errors.append("no PSF widths measured; cannot pick a master")
 

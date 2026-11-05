@@ -189,7 +189,15 @@ def derive_bin_factors(img_files, drivers, survey_list, r80, fwhm_dict,
                  for b in own_bands if b in r80 and b != master]
         min_blur = min(blurs) if blurs else float('inf')
 
-        native = science_pixel_scale(imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position)
+        # A survey can mix native grids (PHANGS-JWST: NIRCam SW 0.031,
+        # NIRCam LW 0.063, MIRI 0.111 arcsec/px) and ONE factor is applied to
+        # all of them. It must be derived from the COARSEST grid: that is the
+        # one that limits the sampling of the master. Taking imgs[0] made the
+        # factor depend on the file order (bin 1 from MIRI on one machine,
+        # bin 3 from NIRCam LW on another, leaving MIRI at 0.33 arcsec/px and
+        # the master at 1.9 px/FWHM).
+        native = max(science_pixel_scale(p, hdu_ext=drivers[survey].get_hdu_sci_position)
+                     for p in imgs)
         factors[survey] = choose_bin_factor(
             native, float(fwhm_dict.get(master, 0.0)) or native * 2, min_blur)
     return factors
@@ -374,12 +382,13 @@ def rediscover_unmatched(img_files, drivers, survey_list, kernel_dir, master,
         if not survey_imgs:
             continue
 
-        grid = science_pixel_scale(survey_imgs[0], hdu_ext = drivers[survey].get_hdu_sci_position) * bin_factors.get(survey, 1)
-
         for img in survey_imgs:
             filt = drivers[survey].get_sci_filter_name(str(img))
             if filt == master or filt in have_kernel:
                 continue
+            # each band's own grid: a survey can mix native scales
+            grid = science_pixel_scale(img, hdu_ext=drivers[survey].get_hdu_sci_position) \
+                * bin_factors.get(survey, 1)
             if filt not in r80 or master not in r80:
                 print(f"==> Warning: '{filt}' has no kernel and no r80; it will "
                       f"be written unmatched with PSFRESID = 0.")
