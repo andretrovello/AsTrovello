@@ -31,6 +31,9 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.23569096
     description: Version 2.0.0
+  - type: doi
+    value: 10.5281/zenodo.24331401
+    description: Version 2.1.0
 repository-code: 'https://github.com/andretrovello/AsTrovello'
 license: MIT
 version: 2.1.0
